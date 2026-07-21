@@ -1,0 +1,56 @@
+[workspace]
+resolver = "3"
+members = [
+  "pqcrypto-utils",
+  "pqcrypto-mceliece",
+  "pqcrypto-ml-kem",
+  "pqcrypto-ml-dsa",
+  "pqcrypto-sphincs",
+  "pqcrypto-hqc",
+  "pqcrypto-sntrup",
+  "pqcrypto-ntruplr",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://gitlab.com/backbone-hq/pqcrypto-rust"
+authors = ["Backbone Authors <root@backbone.dev>"]
+
+[workspace.dependencies]
+# Common dependencies that can be shared across crates
+getrandom = { version = "0.2", default-features = false }
+sha3 = { version = "0.10", default-features = false, features = ["asm"] }
+sha2 = { version = "0.10", default-features = false }
+zeroize = { version = "1", default-features = false, features = [
+  "derive",
+  "alloc",
+] }
+rand = { version = "0.8", default-features = false }
+subtle = { version = "2", default-features = false }
+
+[workspace.lints.rust]
+dead_code = "deny"
+missing_copy_implementations = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unreachable_pub = "deny"
+trivial_casts = "forbid"
+trivial_numeric_casts = "forbid"
+unsafe_code = "forbid"
+unused_lifetimes = "warn"
+unused_qualifications = "forbid"
+
+[workspace.lints.clippy]
+cast_lossless = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+must_use_candidate = "warn"
+needless_range_loop = "allow"
+std_instead_of_alloc = "warn"
+std_instead_of_core = "warn"
+unwrap_used = "warn"

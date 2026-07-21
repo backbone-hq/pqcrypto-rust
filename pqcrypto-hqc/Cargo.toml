@@ -1,0 +1,28 @@
+[package]
+name = "pqcrypto-hqc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "HQC (FIPS 209) implementation: Hamming Quasi-Cyclic KEM."
+categories = ["cryptography", "no-std"]
+keywords = ["hqc", "fips-209", "kem", "post-quantum", "code-based"]
+
+[lints]
+workspace = true
+
+[dependencies]
+safe_arch = { version = "1", optional = true }
+pqcrypto-utils = { path = "../pqcrypto-utils", default-features = false }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+sha3 = { workspace = true, default-features = false }
+getrandom = { workspace = true }
+
+[features]
+default = ["std", "zeroize"]
+std = ["alloc", "sha3/std", "zeroize/alloc", "pqcrypto-utils/std", "getrandom/std"]
+alloc = ["zeroize/alloc"]
+zeroize = ["pqcrypto-utils/zeroize"]
+simd = ["safe_arch"]

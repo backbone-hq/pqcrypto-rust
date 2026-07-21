@@ -1,0 +1,24 @@
+[package]
+name = "pqcrypto-utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Shared utilities for the pqcrypto workspace: KAT parsing, secret-memory wrappers, and tree encoding."
+categories = ["cryptography", "no-std"]
+keywords = ["pqcrypto", "utilities", "post-quantum", "cryptography"]
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+subtle = { workspace = true }
+zeroize = { workspace = true }
+
+[features]
+default = ["std", "zeroize"]
+std = ["alloc"]
+alloc = []
+zeroize = ["zeroize/derive"]

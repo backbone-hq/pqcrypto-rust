@@ -1,0 +1,33 @@
+# Rust build output
+target/
+
+# Library crates — Cargo.lock only matters for applications
+Cargo.lock
+
+# publish sync working clone
+public/
+
+# Rust libraries (compiled artifacts left in source tree)
+*.rlib
+
+# Python bytecode (from PQClean submodule scripts)
+__pycache__/
+*.py[cod]
+
+# Compiled native extensions (build artifacts, not source)
+*.so
+
+# Python venv / caches
+.venv/
+.pytest_cache/
+
+# Subagent artifacts
+.pi-subagents/
+
+# Editor / OS
+*.swp
+*.swo
+*~
+.DS_Store
+.hermes/
+.pi/

@@ -1,0 +1,36 @@
+# Cargo configuration for optimal performance
+# Use RUSTFLAGS="-C target-cpu=native" in CI to build with native features.
+# This config intentionally omits target-cpu=native — setting it globally
+# breaks proc-macro compilation in CI environments where CPUID reports
+# features the host kernel doesn't support.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+    "-C", "force-frame-pointers=yes",
+]
+
+# For benchmarks, we want the same aggressive optimization
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = 1
+
+# Release profile — best performance
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = 1
+panic = "abort"
+strip = "symbols"
+
+# Fast iteration profile (dev builds with some optimizations)
+[profile.dev]
+opt-level = 1
+debug = 1
+
+# PGO-optimized release profile (used by cargo-pgo)
+[profile.release-pgo]
+inherits = "release"
+lto = true
