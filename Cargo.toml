@@ -1,14 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-  "pqcrypto-utils",
-  "pqcrypto-mceliece",
-  "pqcrypto-ml-kem",
-  "pqcrypto-ml-dsa",
-  "pqcrypto-sphincs",
-  "pqcrypto-hqc",
-  "pqcrypto-sntrup",
-  "pqcrypto-ntruplr",
+  "backbone-pqcrypto-internals",
+  "backbone-mceliece",
+  "backbone-ml-kem",
+  "backbone-ml-dsa",
+  "backbone-sphincs",
+  "backbone-hqc",
+  "backbone-sntrup",
+  "backbone-ntruplr",
 ]
 
 [workspace.package]

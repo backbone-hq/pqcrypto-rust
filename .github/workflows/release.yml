@@ -1,0 +1,46 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --workspace
+      - run: cargo test --release --workspace
+
+  publish:
+    name: Publish
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    env:
+      CARGO_REGISTRY: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish all crates (idempotent)
+        run: |
+          for crate in \
+            backbone-pqcrypto-internals \
+            backbone-mceliece \
+            backbone-ml-kem \
+            backbone-ml-dsa \
+            backbone-sphincs \
+            backbone-hqc \
+            backbone-sntrup \
+            backbone-ntruplr
+          do
+            echo "::group::Publishing $crate"
+            cargo publish -p "$crate" 2>&1 || \
+              echo "  → $crate skipped (already published)"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,36 @@
+[package]
+name = "backbone-sphincs"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SPHINCS+ (FIPS 205) implementation: Stateless Hash-Based Digital Signature Standard"
+categories = ["cryptography", "no-std"]
+keywords = ["sphincs+", "fips-205", "signature", "post-quantum", "hash-based"]
+
+[lints]
+workspace = true
+
+[dependencies]
+backbone-pqcrypto-internals = { path = "../backbone-pqcrypto-internals", default-features = false }
+zeroize = { workspace = true }
+sha3 = { workspace = true }
+sha2 = { workspace = true }
+getrandom = { workspace = true }
+
+[features]
+default = ["std", "zeroize"]
+std = [
+  "alloc",
+  "sha2/std",
+  "sha3/std",
+  "zeroize/alloc",
+  "backbone-pqcrypto-internals/std",
+  "getrandom/std",
+]
+alloc = ["zeroize/alloc"]
+zeroize = ["backbone-pqcrypto-internals/zeroize"]
+
+[dev-dependencies]
+hex = "0.4"

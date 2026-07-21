@@ -18,13 +18,13 @@ PQCrypto provides pure Rust implementations of the following post-quantum crypto
 
 | Crate | Algorithm | Standard | Type |
 | ------- | ----------- | ---------- | ------ |
-| `pqcrypto-ml-kem` | ML-KEM | FIPS 203 | KEM |
-| `pqcrypto-ml-dsa` | ML-DSA | FIPS 204 | Signature |
-| `pqcrypto-sphincs` | SPHINCS+ | FIPS 205 | Signature |
-| `pqcrypto-hqc` | HQC | FIPS 207 | KEM |
-| `pqcrypto-sntrup` | Streamlined NTRU Prime | — | KEM |
-| `pqcrypto-ntruplr` | NTRU LPRime | — | KEM |
-| `pqcrypto-mceliece` | Classic McEliece | — | KEM |
+| `backbone-ml-kem` | ML-KEM | FIPS 203 | KEM |
+| `backbone-ml-dsa` | ML-DSA | FIPS 204 | Signature |
+| `backbone-sphincs` | SPHINCS+ | FIPS 205 | Signature |
+| `backbone-hqc` | HQC | FIPS 207 | KEM |
+| `backbone-sntrup` | Streamlined NTRU Prime | — | KEM |
+| `backbone-ntruplr` | NTRU LPRime | — | KEM |
+| `backbone-mceliece` | Classic McEliece | — | KEM |
 
 ### 📇 Usage
 
@@ -33,21 +33,21 @@ Signatures and KEMs share the same per-variant module pattern:
 ```rust
 // ── Sign ───────────────────────────────────────────────
 
-use pqcrypto_ml_dsa::mldsa65;
+use backbone_ml_dsa::mldsa65;
 
 let (pk, sk) = mldsa65::keygen(&[0u8; 32]).unwrap();
 let sig = mldsa65::sign(&sk, b"msg").unwrap();
 assert!(mldsa65::verify(&pk, b"msg", &sig));
 
 // SPHINCS+ seeds are 48 bytes (128s) or 96 bytes (256s)
-use pqcrypto_sphincs::shake128f;
+use backbone_sphincs::shake128f;
 let (pk, sk) = shake128f::keygen(&[0u8; 48]).unwrap();
 let sig = shake128f::sign(&sk, b"msg").unwrap();
 assert!(shake128f::verify(&pk, b"msg", &sig));
 
 // ── Key Exchange ───────────────────────────────────────
 
-use pqcrypto_ml_kem::mlkem768;
+use backbone_ml_kem::mlkem768;
 
 let (pk, sk) = mlkem768::keygen(&[0u8; 32]).unwrap();
 let enc = mlkem768::encaps(&pk).unwrap();
@@ -88,7 +88,7 @@ cargo build --release
 
 # With SIMD acceleration (AVX2, PCLMULQDQ)
 RUSTFLAGS="-C target-cpu=native" cargo build --release --features \
-  pqcrypto-mceliece/simd,pqcrypto-hqc/simd,pqcrypto-ml-kem/simd,pqcrypto-ml-dsa/simd
+  backbone-mceliece/simd,backbone-hqc/simd,backbone-ml-kem/simd,backbone-ml-dsa/simd
 ```
 
 When the `simd` feature is not enabled (or when building without `target-cpu=native`), the scalar fallback is used automatically — zero dependency cost.
