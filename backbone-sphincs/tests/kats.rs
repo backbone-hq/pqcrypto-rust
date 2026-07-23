@@ -32,8 +32,6 @@ fn parse_hex_line(line: &str) -> Vec<u8> {
     hex::decode(hex.trim()).expect("hex decode failed")
 }
 
-// ── Signature verification KATs ──
-
 macro_rules! kat_verify_test {
     ($name:ident, $module:ident, $variant:ty, $variant_name:literal) => {
         #[test]
@@ -109,8 +107,6 @@ kat_verify_test!(kat_sha2_192f, sha2_192f, Sha2_192f, "sha2-192f");
 kat_verify_test!(kat_sha2_256s, sha2_256s, Sha2_256s, "sha2-256s");
 kat_verify_test!(kat_sha2_256f, sha2_256f, Sha2_256f, "sha2-256f");
 
-// ── Sign-output byte-for-byte KATs ──
-
 macro_rules! kat_sign_test {
     ($name:ident, $module:ident, $variant:ty, $variant_name:literal) => {
         #[test]
@@ -175,8 +171,6 @@ kat_sign_test!(kat_sign_sha2_192s, sha2_192s, Sha2_192s, "sha2-192s");
 kat_sign_test!(kat_sign_sha2_192f, sha2_192f, Sha2_192f, "sha2-192f");
 kat_sign_test!(kat_sign_sha2_256s, sha2_256s, Sha2_256s, "sha2-256s");
 kat_sign_test!(kat_sign_sha2_256f, sha2_256f, Sha2_256f, "sha2-256f");
-
-// ── Key generation KATs ──
 
 macro_rules! kat_keygen_test {
     ($name:ident, $module:ident, $variant:ty, $variant_name:literal) => {

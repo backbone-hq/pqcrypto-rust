@@ -1,5 +1,3 @@
-// Auto-generated FFT tables for 6960119f
-
 pub(crate) const FFT_CONSTS_6960119F: [[u64; 13]; 128] = [
     [
         0x6969969669699696,

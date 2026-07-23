@@ -82,7 +82,6 @@ fn unpack_bits(buf: &[u8], data: &mut [i32], bits: usize, mut bit_pos: usize) ->
             bit_pos += 1;
         }
         // SAFETY: val is masked to `bits` bits, and encodes a coefficient offset
-        // that will be subtracted below. This is intentional modular arithmetic.
         *coeff = i32::try_from(val).expect("value fits in i32");
     }
     bit_pos
@@ -154,24 +153,20 @@ pub(crate) fn keygen<P: Params>(seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
     let mut t = vec![Poly::new(); P::K];
     for i in 0..P::K {
-        // First term: store directly (raw)
         {
             let mut prod = Poly::new();
             ntt_mul(&a[i][0], &s1_ntt[0], &mut prod);
             t[i] = prod;
         }
-        // Remaining terms: raw accumulate, no per-term reduction
         for j in 1..P::L {
             let mut prod = Poly::new();
             ntt_mul(&a[i][j], &s1_ntt[j], &mut prod);
             t[i].add(&prod);
         }
-        // Reduce once before inv_ntt (matching C ref)
         for coeff in t[i].coeffs.iter_mut() {
             *coeff = crate::field::reduce32(*coeff);
         }
         inv_ntt(&mut t[i]);
-        // Add s2 in time domain, raw, then reduce
         for j in 0..256 {
             t[i].coeffs[j] += s2[i].coeffs[j];
         }
@@ -192,7 +187,6 @@ pub(crate) fn keygen<P: Params>(seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
         }
     }
 
-    // Encode t1 (10 bits per coefficient) and compute tr = H(rho || t1)
     let pk_bits = 10usize;
     let t1_bytes = (P::K * 256 * pk_bits).div_ceil(8);
     let mut pk = vec![0u8; 32 + t1_bytes];
@@ -203,7 +197,6 @@ pub(crate) fn keygen<P: Params>(seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
         bit_pos = pack_bits(&mut pk, &*poly.coeffs, pk_bits, bit_pos);
     }
 
-    // tr = H(rho || t1_enc)
     let mut tr = [0u8; 64];
     {
         let mut shake = Shake256::default();
@@ -212,7 +205,6 @@ pub(crate) fn keygen<P: Params>(seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
         tr_reader.read(&mut tr);
     }
 
-    // Encode secret key: rho || K || tr || s1 || s2 || t0
     let eta_bits = (eta * 2 + 1).ilog2() as usize + 1;
     let s1_bytes = (P::L * 256 * eta_bits).div_ceil(8);
     let s2_bytes = (P::K * 256 * eta_bits).div_ceil(8);
@@ -225,16 +217,13 @@ pub(crate) fn keygen<P: Params>(seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
     sk[64..128].copy_from_slice(&tr);
 
     let mut bit_pos = 128 * 8;
-    // Encode s1 (eta bits)
     bit_pos = encode_single_poly_eta(&s1[0], &mut sk, bit_pos, eta);
     for poly in &s1[1..] {
         bit_pos = encode_single_poly_eta(poly, &mut sk, bit_pos, eta);
     }
-    // Encode s2 (eta bits)
     for poly in &s2 {
         bit_pos = encode_single_poly_eta(poly, &mut sk, bit_pos, eta);
     }
-    // Encode t0 (13 bits)
     for poly in &t0 {
         bit_pos = encode_single_poly_t0(poly, &mut sk, bit_pos, 13);
     }
@@ -265,7 +254,6 @@ fn encode_single_poly_eta(poly: &Poly, buf: &mut [u8], bit_offset: usize, eta: u
 fn encode_single_poly_t0(poly: &Poly, buf: &mut [u8], bit_offset: usize, bits: usize) -> usize {
     let mut bit_pos = bit_offset;
     for &coeff in poly.coeffs.iter() {
-        // t0 is stored as centered remainder; encode as unsigned
         let val = (coeff % (1 << bits) + (1 << bits)) % (1 << bits);
         let byte_idx = bit_pos / 8;
         let bit_off = bit_pos % 8;
@@ -326,8 +314,6 @@ fn decode_poly_t0_from_bits(buf: &[u8], bit_offset: usize, bits: usize) -> Poly 
             val |= u32::from(buf[byte_idx + 2]) << (16 - bit_off);
         }
         val &= (1u32 << bits) - 1;
-        // Convert from unsigned to centered representation:
-        // if val >= 2^(bits-1), then val - 2^bits (i.e., centered)
         *coeff = i32::try_from(val).expect("value fits in i32")
             - (if val > (1u32 << (bits - 1)) {
                 1 << bits
@@ -479,7 +465,6 @@ fn prepare_signing_matrices<P: Params>(
     (s1_ntt, s2_ntt, t0_ntt, a)
 }
 
-/// Compute the message digests: μ = CRH(tr || msg) and ρ′ = H(k || 0³² || μ).
 fn compute_message_expansion(
     k: &[u8],
     tr: &[u8],
@@ -540,7 +525,6 @@ fn compute_w_and_decompose<P: Params>(
 fn compute_challenge<P: Params>(mu: &[u8; 64], w1: &[Poly], tau: usize) -> ([u8; 32], Poly) {
     let w1_enc = encode_w1_high_bits::<P>(w1);
 
-    // c̃ = H(mu || w1)
     let mut c_tilde_seed = [0u8; 32];
     {
         let mut shake = Shake256::default();
@@ -550,7 +534,6 @@ fn compute_challenge<P: Params>(mu: &[u8; 64], w1: &[Poly], tau: usize) -> ([u8;
         c_reader.read(&mut c_tilde_seed);
     }
 
-    // c = SampleInBall(c̃)
     let c = sample_in_ball(&c_tilde_seed, tau);
     (c_tilde_seed, c)
 }
@@ -619,8 +602,6 @@ fn try_sign_response_ct<P: Params>(ctx: &SignResponseCtx) -> (Vec<u8>, Choice) {
         for j in 0..256 {
             let a0 = hint_w0[i].coeffs[j];
             // CT hint decision: a0 is secret-derived.
-            // Original condition: a0 >= gamma2 || a0 < -gamma2.
-            // Using gamma2 (not gamma2+1) for >=, matching the original.
             let ge_flag = !(a0.wrapping_sub(ctx.gamma2) >> 31);
             let lt_flag = a0.wrapping_add(ctx.gamma2) >> 31;
             let hint_choice = Choice::from(((ge_flag | lt_flag) as u8) & 1);
@@ -640,7 +621,6 @@ fn try_sign_response_ct<P: Params>(ctx: &SignResponseCtx) -> (Vec<u8>, Choice) {
     // CT combine: old branch on secret-derived booleans.
     let valid = z_valid & r0_valid & ct0_valid & hint_valid;
 
-    // Runs to completion regardless of validity to avoid timing variation.
     let gamma1_bits = if ctx.gamma1 == (1 << 17) { 18 } else { 20 };
     let z_bytes = (P::L * 256 * gamma1_bits).div_ceil(8);
     let h_bytes = P::OMEGA + P::K;
@@ -691,8 +671,8 @@ fn decode_t1_from_pk<P: Params>(pk: &[u8]) -> Vec<Poly> {
 fn compute_mu_for_verification(pk: &[u8], prefix: &[u8], msg: &[u8]) -> [u8; 64] {
     let mu: [u8; 64] = {
         let mut shake = Shake256::default();
-        shake.update(&pk[..32]); // rho
-        shake.update(&pk[32..]); // t1_enc
+        shake.update(&pk[..32]);
+        shake.update(&pk[32..]);
         let mut tr = [0u8; 64];
         let mut reader = shake.finalize_xof();
         reader.read(&mut tr);
@@ -733,10 +713,8 @@ fn compute_w1_ntt_domain<P: Params>(
     c_ntt: &Poly,
     t1: &mut [Poly],
 ) -> Vec<Poly> {
-    // w1 = A*z (NTT domain)
     let mut w1 = matrix_multiply::<P>(a, z_ntt);
 
-    // t1 = c · NTT(2^D * t1)  (NTT domain, matches C ref)
     let d = i32::try_from(P::D).expect("P::D fits in i32");
     for i in 0..P::K {
         for coeff in t1[i].coeffs.iter_mut() {
@@ -748,14 +726,12 @@ fn compute_w1_ntt_domain<P: Params>(
         t1[i] = tmp;
     }
 
-    // w1 = w1 - t1  (NTT domain raw subtraction, matches C ref)
     for i in 0..P::K {
         for j in 0..256 {
             w1[i].coeffs[j] = w1[i].coeffs[j].wrapping_sub(t1[i].coeffs[j]);
         }
     }
 
-    // reduce + invntt (matches C ref)
     for w1i in w1.iter_mut() {
         for coeff in w1i.coeffs.iter_mut() {
             *coeff = crate::field::reduce32(*coeff);
@@ -763,7 +739,6 @@ fn compute_w1_ntt_domain<P: Params>(
         inv_ntt(w1i);
     }
 
-    // caddq (matches C ref)
     for w1i in w1.iter_mut() {
         for coeff in w1i.coeffs.iter_mut() {
             *coeff = crate::field::caddq(*coeff);
@@ -784,7 +759,6 @@ fn decode_hint_and_verify_challenge<P: Params>(
     gamma2: i32,
     c_tilde_seed: &[u8; 32],
 ) -> bool {
-    // Decode hint from sig
     let h_bytes = P::OMEGA + P::K;
     let h_start = 32 + z_bytes;
     let h_enc = &sig[h_start..h_start + h_bytes];
@@ -811,8 +785,6 @@ fn decode_hint_and_verify_challenge<P: Params>(
         return false;
     }
 
-    // w1_corrected = use_hint(w1, h)
-    // The reference first computes caddq, then decompose:
     for w1i in w1.iter_mut() {
         for coeff in w1i.coeffs.iter_mut() {
             *coeff = crate::field::caddq(*coeff);
@@ -825,10 +797,8 @@ fn decode_hint_and_verify_challenge<P: Params>(
         }
     }
 
-    // Encode w1_corrected
     let w1_prime_enc = encode_w1_high_bits::<P>(w1);
 
-    // Compute c̃' = H(μ || w₁')
     let mut c_tilde_prime = [0u8; 64];
     {
         let mut shake = Shake256::default();
@@ -874,7 +844,6 @@ pub(crate) fn sign<P: Params>(
     let mut y = vec![Poly::new(); P::L];
     let mut nonce: u16 = 0;
 
-    // Pre-compute sig_len (parameter-dependent, not secret).
     let gamma1_bits = if gamma1 == (1 << 17) { 18 } else { 20 };
     let z_bytes = (P::L * 256 * gamma1_bits).div_ceil(8);
     let sig_len = 32 + z_bytes + P::OMEGA + P::K;
@@ -913,7 +882,6 @@ pub(crate) fn sign<P: Params>(
         found |= store;
     }
 
-    // Unavoidable branch: caller must know success/failure.
     if found.unwrap_u8() == 0 {
         return Err(Error::SigningFailed);
     }

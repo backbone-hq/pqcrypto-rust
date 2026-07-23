@@ -32,7 +32,6 @@ pub(crate) fn merkle_sign<H: Hash>(
 
     let sig_len = H::WOTS_BYTES;
 
-    // Allocate WOTS scratch buffer once, reuse for all leaves
     let wots_len = H::WOTS_LEN;
     let mut pk_buffer_arr = SecretArray::<u8, 2144>::new();
     let pk_buffer = &mut pk_buffer_arr[..wots_len * n];

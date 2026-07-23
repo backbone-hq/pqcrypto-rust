@@ -34,14 +34,12 @@ pub(crate) fn keygen<P: Params>(
     vector::vect_set_random_fixed_weight_keygen_from_xof::<P, _>(&mut dk_reader, &mut y);
     vector::vect_set_random_fixed_weight_keygen_from_xof::<P, _>(&mut dk_reader, &mut x);
 
-    // Expand public key
     let mut rand_pk = vec![0u8; P::VEC_N_SIZE_BYTES];
     kem::xof_fill(seed_ek, &mut rand_pk);
 
     let mut h = vec![0u64; P::VEC_N_SIZE_64];
     vector::vect_set_random::<P>(&rand_pk, &mut h);
 
-    // Compute s = x + y·h
     let mut s = vec![0u64; P::VEC_N_SIZE_64];
     gf2x::vect_mul::<P>(&mut s, &y, &h);
     for i in 0..P::VEC_N_SIZE_64 {
@@ -99,7 +97,6 @@ pub(crate) fn decrypt<P: Params>(m: &mut [u8], u: &[u64], v: &[u64], sk: &[u8]) 
     let seed_dk = &sk[P::PK_BYTES..P::PK_BYTES + P::SEED_BYTES];
     vector::vect_set_random_fixed_weight_keygen::<P>(seed_dk, &mut y);
 
-    // v - u·y
     let mut tmp = vec![0u64; P::VEC_N_SIZE_64];
     gf2x::vect_mul::<P>(&mut tmp, &y, u);
 

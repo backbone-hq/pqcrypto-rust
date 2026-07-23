@@ -47,6 +47,7 @@ pub(crate) fn xof_fill(seed: &[u8], out: &mut [u8]) {
     reader.read(out);
 }
 
+/// Generates the `i` secret key from a seed.
 pub(crate) fn hash_i<P: Params>(seed: &[u8]) -> [u8; 64] {
     let mut hasher = Sha3_512::new();
     Digest::update(&mut hasher, &seed[..P::SEED_BYTES]);
@@ -79,8 +80,6 @@ fn hash_j<P: Params>(hash_ek: &[u8], sigma: &[u8], ct: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-// ─── Per-variant keygen helpers ───
-
 /// Seed expansion + call to `hqc::keygen`. Used by the per-variant modules.
 pub(crate) fn keygen_from_seed<P: Params>(seed: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let mut seed_kem = SecretVec::new(P::SEED_BYTES);
@@ -97,9 +96,6 @@ pub(crate) fn keygen_from_seed<P: Params>(seed: &[u8]) -> Result<(Vec<u8>, Vec<u
     Ok((pk, sk))
 }
 
-// ─── Generic internal API (used by tests and per-variant modules) ───
-
-/// Encapsulate: generate shared secret and ciphertext for a public key.
 pub(crate) fn encaps<P: Params>(ct: &mut [u8], ss: &mut [u8; 32], pk: &[u8]) -> Result<(), Error> {
     if pk.len() != P::PK_BYTES {
         return Err(Error::InvalidKeyLength);
@@ -136,7 +132,6 @@ pub(crate) fn encaps_from_seed<P: Params>(
         return Err(Error::InvalidKeyLength);
     }
 
-    // Replay the KAT PRNG stream after keypair's seed_kem draw.
     let mut expanded = SecretVec::new(P::SEED_BYTES + P::VEC_K_SIZE_BYTES + P::SALT_SIZE_BYTES);
     let mut hash = Shake256::default();
     hash.update(seed);
@@ -162,7 +157,6 @@ pub(crate) fn encaps_from_seed<P: Params>(
     Ok(())
 }
 
-/// Decapsulate: recover shared secret from ciphertext using secret key.
 pub(crate) fn decaps<P: Params>(ss: &mut [u8; 32], ct: &[u8], sk: &[u8]) -> Result<(), Error> {
     if ct.len() != P::CT_BYTES {
         return Err(Error::InvalidCiphertextLength);

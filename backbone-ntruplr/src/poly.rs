@@ -299,7 +299,6 @@ mod tests {
     #[test]
     fn test_modq_freeze_range() {
         const Q: i16 = 4591;
-        // Test with values around 0
         for val in [-5000i32, -4591, -2295, 0, 2295, 4590, 5000] {
             let frozen = modq_freeze::<Q>(val);
             let frozen_i32 = i32::from(frozen);

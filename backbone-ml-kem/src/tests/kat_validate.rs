@@ -1,12 +1,4 @@
 //! ML-KEM (FIPS 203) KAT validation against NIST ACVP keygen vectors.
-//!
-//! Tests all three parameter sets (ML-KEM-512, ML-KEM-768, ML-KEM-1024)
-//! against every KAT entry in the corresponding .rsp files.
-//!
-//! For each ACVP entry: keygen from (d, z) → verify pk, sk match expected,
-//! then encaps/decaps with msg to verify deterministic roundtrip behavior.
-//! The mlkem-native transcript hash test below covers official encapsulation
-//! ciphertext/shared-secret vectors without checking in another large KAT copy.
 
 use std::{format, path::PathBuf};
 
@@ -59,17 +51,14 @@ fn run_mlkem_kat<const K: usize>(
         let z_arr: [u8; 32] = z.try_into().expect("z must be 32 bytes");
         let msg_arr: [u8; 32] = msg.try_into().expect("msg must be 32 bytes");
 
-        // ─── KeyGen ───
         let (pk, sk) = kem::keygen_internal::<K>(eta1, eta2, &d_arr, &z_arr);
 
         assert_eq!(pk, expected_pk.as_slice(), "{label} entry {i}: PK mismatch");
         assert_eq!(sk, expected_sk.as_slice(), "{label} entry {i}: SK mismatch");
 
-        // ─── Encaps ───
         let enc = kem::encaps_internal::<K>(&pk, &msg_arr, eta1, eta2, du, dv)
             .expect("encapsulation should succeed with valid inputs");
 
-        // ─── Decaps ───
         let dec_ss = kem::decaps_internal::<K>(&sk, &enc.ciphertext, eta1, eta2, du, dv, pk_size)
             .expect("decapsulation should pass hash check");
 
@@ -172,8 +161,6 @@ fn mlkem_native_transcript_512() {
     );
 }
 
-// ─── ML-KEM-768 ───
-
 #[test]
 fn kat_mlkem768() {
     run_mlkem_kat::<3>("mlkem768.rsp", 2, 2, 10, 4, 1184, "ML-KEM-768");
@@ -191,8 +178,6 @@ fn mlkem_native_transcript_768() {
         "ML-KEM-768",
     );
 }
-
-// ─── ML-KEM-1024 ───
 
 #[test]
 fn kat_mlkem1024() {

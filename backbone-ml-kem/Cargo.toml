@@ -1,6 +1,6 @@
 [package]
 name = "backbone-ml-kem"
-version = "0.0.1"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -8,13 +8,14 @@ authors.workspace = true
 description = "ML-KEM (FIPS 203) implementation: Module-Lattice-Based Key Encapsulation Mechanism"
 categories = ["cryptography", "no-std"]
 keywords = ["ml-kem", "fips-203", "kem", "post-quantum", "lattice-based"]
+exclude = ["tests/"]
 
 [lints]
 workspace = true
 
 [dependencies]
 safe_arch = { version = "1", optional = true }
-backbone-pqcrypto-internals = { path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.1.0", path = "../backbone-pqcrypto-internals", default-features = false }
 zeroize = { workspace = true }
 sha3 = { workspace = true }
 getrandom = { workspace = true }
@@ -22,7 +23,13 @@ subtle = { workspace = true }
 
 [features]
 default = ["std", "zeroize"]
-std = ["alloc", "sha3/std", "zeroize/alloc", "backbone-pqcrypto-internals/std", "getrandom/std"]
+std = [
+  "alloc",
+  "sha3/std",
+  "zeroize/alloc",
+  "backbone-pqcrypto-internals/std",
+  "getrandom/std",
+]
 alloc = ["zeroize/alloc"]
 zeroize = ["backbone-pqcrypto-internals/zeroize"]
 simd = ["safe_arch"]

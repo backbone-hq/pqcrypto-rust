@@ -12,7 +12,7 @@ use alloc::vec;
 /// Uses a 16-entry LUT with 4-bit nibble stepping.
 #[cfg(not(all(feature = "simd", target_feature = "pclmulqdq")))]
 fn base_mul_fallback(a: u64, b: u64) -> (u64, u64) {
-    let b_lo = b & 0x0FFFFFFFFFFFFFFF; // lower 60 bits
+    let b_lo = b & 0x0FFFFFFFFFFFFFFF;
 
     let u0 = 0u64;
     let u1 = b_lo;
@@ -46,7 +46,6 @@ fn base_mul_fallback(a: u64, b: u64) -> (u64, u64) {
         s += 4;
     }
 
-    // Handle the high 4 bits of b
     for i in 0..4 {
         let mask = 0u64.wrapping_sub((b >> (60 + i)) & 1);
         l ^= (a << (60 + i)) & mask;
@@ -61,14 +60,10 @@ fn base_mul_fallback(a: u64, b: u64) -> (u64, u64) {
 #[inline]
 fn base_mul(a: u64, b: u64) -> (u64, u64) {
     use safe_arch::{m128i, mul_i64_carryless_m128i};
-    // Bit-preserving u64→i64 cast: m128i low lane expects i64, but the PCLMULQDQ
-    // result is the same regardless of the signed interpretation.
     let p = m128i::from([i64::from_ne_bytes(a.to_ne_bytes()), 0i64]);
     let q = m128i::from([i64::from_ne_bytes(b.to_ne_bytes()), 0i64]);
     let r: m128i = mul_i64_carryless_m128i::<0>(p, q);
     let res: [i64; 2] = r.into();
-    // Result is always non-negative in practice (carryless product), but clippy
-    // doesn't know that — use from_ne_bytes for a bit-preserving i64→u64 cast.
     (
         u64::from_ne_bytes(res[0].to_ne_bytes()),
         u64::from_ne_bytes(res[1].to_ne_bytes()),
@@ -98,19 +93,15 @@ fn karatsuba(o: &mut [u64], a: &[u64], b: &[u64], size: usize) {
     let ah = &a[size_l..];
     let bh = &b[size_l..];
 
-    // Allocate temporaries
     let mut alh = vec![0u64; size_l];
     let mut blh = vec![0u64; size_l];
     let mut tmp1 = vec![0u64; 2 * size_l];
     let mut tmp2 = vec![0u64; 2 * size_l];
 
-    // Low product
     karatsuba(o, a, b, size_l);
 
-    // High product
     karatsuba(&mut tmp2, ah, bh, size_h);
 
-    // Middle: (a_lo ^ a_hi) * (b_lo ^ b_hi)
     for i in 0..size_h {
         alh[i] = a[i] ^ a[i + size_l];
         blh[i] = b[i] ^ b[i + size_l];
@@ -122,9 +113,6 @@ fn karatsuba(o: &mut [u64], a: &[u64], b: &[u64], size: usize) {
 
     karatsuba(&mut tmp1, &alh, &blh, size_l);
 
-    // Combine: o = low + (middle + low + high) * x^size_l + high * x^(2*size_l)
-    // But since we're working with linear polynomials over GF(2),
-    // the addition is XOR.
     for i in 0..(2 * size_l) {
         tmp1[i] ^= o[i];
     }
@@ -134,7 +122,6 @@ fn karatsuba(o: &mut [u64], a: &[u64], b: &[u64], size: usize) {
     for i in 0..(2 * size_l) {
         o[i + size_l] ^= tmp1[i];
     }
-    // Copy high part (XOR because middle term may have written here)
     for i in 0..(2 * size_h) {
         o[i + 2 * size_l] ^= tmp2[i];
     }
@@ -153,7 +140,6 @@ fn reduce<P: Params>(o: &mut [u64], a: &[u64]) {
     o[n - 1] &= P::RED_MASK;
 }
 
-/// Multiply two vectors modulo Xⁿ - 1: o = v1 * v2.
 pub(crate) fn vect_mul<P: Params>(o: &mut [u64], v1: &[u64], v2: &[u64]) {
     let n = P::VEC_N_SIZE_64;
     let mut o_karat = vec![0u64; n << 1];

@@ -107,7 +107,6 @@ pub(crate) fn keygen_internal<const K: usize>(
     d: &[u8; 32],
     z: &[u8; 32],
 ) -> (Vec<u8>, Vec<u8>) {
-    // G(d || K) per ACVP KAT convention (K = security level parameter)
     let mut g_input = [0u8; 33];
     g_input[..32].copy_from_slice(d);
     g_input[32] = u8::try_from(K).expect("K fits in u8");
@@ -119,7 +118,6 @@ pub(crate) fn keygen_internal<const K: usize>(
 
     let a = sampling::sample_ntt::<K>(&rho);
 
-    // Sample s = (s[0], ..., s[K-1]) and e = (e[0], ..., e[K-1])
     let mut s = PolyVec::<K>::new();
     let mut e = PolyVec::<K>::new();
     for i in 0..K {
@@ -135,15 +133,11 @@ pub(crate) fn keygen_internal<const K: usize>(
         ));
     }
 
-    // NTT transform s AND e (C ref stores pkpv in NTT domain)
     for i in 0..K {
         ntt::ntt(&mut s.vec[i].coeffs);
         ntt::ntt(&mut e.vec[i].coeffs);
     }
 
-    // t̂ = A ∘ ŝ (in NTT domain, matching C ref keygen exactly)
-    // Step 1: basemul → Montgomery form; Step 2: tomont → regular NTT domain
-    // Step 3: add ê = NTT(e) in NTT domain
     let mut t_hat = [[0i16; N]; K];
     for i in 0..K {
         let mut sum = SecretArray::<i16, N>::new();
@@ -157,11 +151,9 @@ pub(crate) fn keygen_internal<const K: usize>(
                 });
             }
         }
-        // poly_tomont: montgomery_reduce(sum[k] * R²) = sum[k] * R (undo basemul's R⁻¹)
         for k in 0..N {
             sum[k] = montgomery_reduce(i32::from(sum[k]) * 1353);
         }
-        // Add NTT(e) (already in NTT domain)
         for k in 0..N {
             sum[k] = barrett_reduce({
                 i16::try_from(i32::from(sum[k]) + i32::from(e.vec[i].coeffs[k]))
@@ -171,7 +163,6 @@ pub(crate) fn keygen_internal<const K: usize>(
         t_hat[i] = sum.into_inner();
     }
 
-    // Encode t̂ (NTT domain) and build pk = Encode_12(t̂) || ρ
     let t_polyvec = PolyVec::<K>::from_arrays(&t_hat);
     let t_enc = t_polyvec.encode_12();
 
@@ -179,7 +170,6 @@ pub(crate) fn keygen_internal<const K: usize>(
     ek.extend_from_slice(&t_enc);
     ek.extend_from_slice(&rho);
 
-    // Encode ŝ and build dk = Encode_12(ŝ) || ek || H(ek) || z
     let s_enc = s.encode_12();
 
     let h_ek = h_hash(&ek);
@@ -188,8 +178,6 @@ pub(crate) fn keygen_internal<const K: usize>(
     dk.extend_from_slice(&ek);
     dk.extend_from_slice(&h_ek);
     dk.extend_from_slice(z);
-
-    // Secret intermediates — zeroize before they drop
 
     (ek, dk)
 }
@@ -204,7 +192,6 @@ pub(crate) fn pke_encrypt<const K: usize>(
     du: usize,
     dv: usize,
 ) -> Result<Vec<u8>, Error> {
-    // pk = Encode_12(t̂) || ρ  (ACVP KAT format)
     if ek.len() < K * POLY_BYTES + 32 {
         return Err(Error::InvalidKeyLength);
     }
@@ -229,7 +216,6 @@ pub(crate) fn pke_encrypt<const K: usize>(
         ntt::ntt(&mut y_hat[i]);
     }
 
-    // u = NTT^{-1}(A^T ∘ ŷ) + e1
     let mut u_hat = [[0i16; N]; K];
     for i in 0..K {
         let mut sum = SecretArray::<i16, N>::new();
@@ -256,7 +242,6 @@ pub(crate) fn pke_encrypt<const K: usize>(
 
     let mut v_ntt = [0i16; N];
     for i in 0..K {
-        // pkpv is stored in NTT domain, use directly
         let mut prod = [0i16; N];
         ntt::poly_basemul(&mut prod, &t_vec.vec[i].coeffs, &y_hat[i]);
         for k in 0..N {
@@ -282,7 +267,6 @@ pub(crate) fn pke_encrypt<const K: usize>(
         });
     }
 
-    // Encode ciphertext: c1 = ByteEncode_du(Compress_q(du, u)), c2 = ByteEncode_dv(Compress_q(dv, v))
     let u_polyvec = PolyVec::<K>::from_arrays(&u_hat);
     let c1 = u_polyvec.compress(du).byte_encode(du);
     let v_poly = Poly::from_coeffs(v_ntt);
@@ -319,8 +303,6 @@ pub(crate) fn pke_decrypt<const K: usize>(
     let v_poly = Poly::byte_decode(&ct[c1_size..c1_size + c2_size], dv);
     let v_decompressed = v_poly.decompress(dv);
 
-    // Compute w = v - NTT^{-1}(ŝ ∘ NTT(u))
-    // where ŝ is the NTT-domain secret stored in s_enc
     let mut u_ntt = [[0i16; N]; K];
     for i in 0..K {
         for j in 0..N {
@@ -348,8 +330,6 @@ pub(crate) fn pke_decrypt<const K: usize>(
         .expect("rem_euclid(Q) yields u16-safe value");
     }
 
-    // Decode message: ((coeff * 2 + Q/2) / Q) & 1
-    // coeff is in [0, Q-1]
     let mut msg = [0u8; 32];
     for i in 0..32 {
         msg[i] = 0;
@@ -366,9 +346,7 @@ pub(crate) fn pke_decrypt<const K: usize>(
 /// Result of a successful encapsulation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Encapsulation {
-    /// The shared secret (32 bytes).
     pub shared_secret: [u8; 32],
-    /// The ciphertext.
     pub ciphertext: Vec<u8>,
 }
 
@@ -462,21 +440,18 @@ mod tests {
         let (ek, dk) = keygen_internal::<K>(3, 2, &d, &z);
         let s_enc = &dk[..K * 384];
 
-        // msg=0 with fixed randomness
         let msg = [0u8; 32];
         let r = [0xCDu8; 32];
         let ct = pke_encrypt::<K>(&ek, &msg, &r, 3, 2, 10, 4).expect("pke_encrypt should succeed");
         let dec = pke_decrypt::<K>(s_enc, &ct, 10, 4).expect("pke_decrypt should succeed");
         assert_eq!(msg, dec, "PKE with msg=0 should recover 0");
 
-        // msg=0 with different randomness
         let r2 = [0u8; 32];
         let ct2 =
             pke_encrypt::<K>(&ek, &msg, &r2, 3, 2, 10, 4).expect("pke_encrypt should succeed");
         let dec2 = pke_decrypt::<K>(s_enc, &ct2, 10, 4).expect("pke_decrypt should succeed");
         assert_eq!(msg, dec2, "PKE with msg=0, r=[0;32] should recover 0");
 
-        // Many random messages with different randomness
         for trial in 0..256 {
             let mut test_msg = [0u8; 32];
             for i in 0..32 {

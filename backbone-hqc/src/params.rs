@@ -33,7 +33,6 @@ pub trait Params {
     /// Additive FFT parameter (2^FFT >= DELTA+1).
     const FFT: usize;
 
-    // Derived sizes
     /// Vector size in 64-bit limbs.
     const VEC_N_SIZE_64: usize = ceil_div(Self::N, 64);
     /// Vector size in bytes.
@@ -47,7 +46,6 @@ pub trait Params {
     /// Concatenated code word size in bytes.
     const VEC_N1N2_SIZE_BYTES: usize = ceil_div(Self::N1N2, 8);
 
-    // Key sizes
     /// Public key size in bytes.
     const PK_BYTES: usize = Self::SEED_BYTES + Self::VEC_N_SIZE_BYTES;
     /// Secret key size in bytes.
@@ -61,7 +59,6 @@ pub trait Params {
     /// Shared secret size in bytes.
     const SS_BYTES: usize = 32;
 
-    // Protocol constants
     /// Seed size in bytes.
     const SEED_BYTES: usize = 32;
     /// Salt size in bytes.
@@ -153,8 +150,6 @@ impl Params for Hqc256 {
         246, 191, 144, 8, 232, 47, 27, 141, 178, 130, 64, 124, 47, 39, 188, 216, 48, 199, 187, 1,
     ];
 }
-
-// ─── Sanity checks ───
 
 #[cfg(test)]
 mod tests {

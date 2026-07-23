@@ -21,9 +21,6 @@ pub(crate) fn caddq(a: i32) -> i32 {
 #[inline]
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     // SAFETY: Montgomery reduction intentionally uses the lower 32 bits of `a`.
-    // This is correct by design: taking the low 32 bits is the Montgomery step
-    // `a * QINV mod 2^32`. The shift is also safe because after reduction the
-    // value fits in i32.
     let t = i32::from_le_bytes(a.to_le_bytes()[..4].try_into().expect("4 bytes from i64"))
         .wrapping_mul(QINV);
     let t = (a - i64::from(t) * i64::from(Q)) >> 32;
@@ -36,12 +33,10 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
 pub(crate) fn reduce32(a: i32) -> i32 {
     let t = (i64::from(a) + (1 << 22)) >> 23;
     // SAFETY: the result of (a - t*Q) for |a| < 2^31 and t = round(a/2^23)
-    // has magnitude < Q ≈ 2^23, well within i32 range.
     i32::try_from(i64::from(a) - t * i64::from(Q)).expect("value fits in i32")
 }
 
-// Montgomery constants for R = 2^32
-const QINV: i32 = 58728449; // q^-1 mod 2^32
+const QINV: i32 = 58728449;
 
 #[cfg(test)]
 mod tests {

@@ -1,8 +1,5 @@
 //! Streamlined NTRU Prime implementation
 #![no_std]
-// These casts are structurally necessary for ported reference implementations:
-// Montgomery reduction, bit-packing, and modulus operations are mathematically
-// proven to stay within range. try_from would add unwrap overhead in hot loops.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,

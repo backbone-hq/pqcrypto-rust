@@ -1,5 +1,3 @@
-// Shared GFBITS=12 algorithm module (extracted from mceliece348864)
-// Used by: mceliece348864, mceliece348864f
 use crate::common::*;
 use crate::decode;
 use crate::vec_ops::gf12::*;
@@ -21,7 +19,6 @@ pub(crate) const CRYPTO_PUBLICKEYBYTES: usize = 261120;
 pub(crate) const CRYPTO_SECRETKEYBYTES: usize = 6492;
 pub(crate) const CRYPTO_CIPHERTEXTBYTES: usize = 96;
 pub(crate) const CRYPTO_BYTES: usize = 32;
-// ── Shake256 helper ─────────────────────────────────────────────────────────
 pub(crate) fn shake256_into(output: &mut [u8], input: &[u8]) {
     let mut x = sha3::Shake256::default();
     x.update(input);
@@ -78,7 +75,6 @@ fn store_i(out: &mut [u8], v: u64, i: usize) {
         out[j] = u8::try_from((v >> (j * 8)) & 0xff).expect("store_i byte fits in u8");
     }
 }
-// ── Gao-Mateer FFT (64-point) ──────────────────────────────────────────
 pub(crate) fn radix_conversions(inp: &mut [Vec64; GFBITS], scalars: &[[u64; 12]; 5]) {
     const MASKS: [[u64; 2]; 5] = [
         [0x8888_8888_8888_8888, 0x4444_4444_4444_4444],
@@ -133,14 +129,12 @@ pub(crate) fn butterflies(
         6, 38, 22, 54, 14, 46, 30, 62, 1, 33, 17, 49, 9, 41, 25, 57, 5, 37, 21, 53, 13, 45, 29, 61,
         3, 35, 19, 51, 11, 43, 27, 59, 7, 39, 23, 55, 15, 47, 31, 63,
     ];
-    // boradcast
     for j in 0..64 {
         for i in 0..GFBITS {
             out[j][i] = (inp[i] >> REVERSAL[j]) & 1;
             out[j][i] = 0u64.wrapping_sub(out[j][i]);
         }
     }
-    // butterflies
     let mut consts_ptr = 0usize;
     for i in 0..=5 {
         let s = 1 << i;
@@ -157,7 +151,6 @@ pub(crate) fn butterflies(
         }
         consts_ptr += s;
     }
-    // adding the part contributed by x^64
     for i in 0..64 {
         for b in 0..GFBITS {
             out[i][b] ^= powers[i][b];
@@ -174,7 +167,6 @@ pub(crate) fn fft(
     radix_conversions(inp, scalars);
     butterflies(out, inp, consts, powers);
 }
-// ── Scalar GF operations (GF(2^12) with poly z^12 + z^3 + 1) ───────────
 fn gf_mul(a: Gf, b: Gf) -> Gf {
     crate::gf::gf_mul::<12>(a, b)
 }
@@ -216,13 +208,10 @@ fn gf_iszero(a: Gf) -> Gf {
     t >>= 19;
     u16::try_from(t).expect("gf_iszero result fits in u16")
 }
-// ── genpoly_gen (SYS_T=64 version) ─────────────────────────────────────
 fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
     let mut prod = [0u16; SYS_T * 2 - 1];
     for i in 0..SYS_T {
         for j in 0..SYS_T {
-            // Use direct scalar multiply (always faster than PCLMULQDQ for isolated calls
-            // due to XMM register save/restore overhead in tight loops).
             let a = u32::from(lhs[i]);
             let b = u32::from(rhs[j]);
             let mut tmp = a * (b & 1);
@@ -275,7 +264,6 @@ fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
         }
         _ => {
             // SAFETY: SYS_T is monomorphized by the variant parameter; all supported
-            // values (64, 96, 119, 128) are handled above.
             unreachable!()
         }
     }
@@ -318,7 +306,6 @@ pub(crate) fn genpoly_gen(out: &mut [Gf; SYS_T], f: &[Gf; SYS_T]) -> bool {
     out.copy_from_slice(&mat[SYS_T]);
     false
 }
-// ── irr_load (single vector for GFBITS=12) ────────────────────────────
 pub(crate) fn irr_load(out: &mut [Vec64; GFBITS], input: &[u8]) {
     let mut irr = [0u16; SYS_T + 1];
     for i in 0..SYS_T {
@@ -334,7 +321,6 @@ pub(crate) fn irr_load(out: &mut [Vec64; GFBITS], input: &[u8]) {
         out[i] = v;
     }
 }
-// ── Support generation (single vector) ─────────────────────────────────
 fn bitrev(value: Gf) -> Gf {
     let mut x = value;
     x = ((x & 0x00ff) << 8) | ((x & 0xff00) >> 8);
@@ -365,7 +351,6 @@ pub(crate) fn support_gen(support: &mut [Gf; SYS_N], c: &[u8]) {
         }
     }
 }
-// ── Benes network (64-element) ─────────────────────────────────────────
 fn layer(data: &mut [u64; 64], bits: &[u64], lgs: usize) {
     let s = 1 << lgs;
     let mut bit_idx = 0usize;
@@ -442,7 +427,6 @@ pub(crate) fn benes(r: &mut [u64; 64], bits: &[u8], rev: bool) {
     let r_in = *r;
     transpose_64x64(r, &r_in);
 }
-// ── Public key generation (single vector) ──────────────────────────────
 pub(crate) fn de_bitslicing(out: &mut [u64], inp: &[[Vec64; GFBITS]; 64]) {
     for item in out.iter_mut() {
         *item = 0;
@@ -514,7 +498,6 @@ pub(crate) fn pk_gen(
         vec_mul(&mut tmp, &tmp_copy, &eval[i + 1]);
     }
     vec_copy(&mut prod[0], &tmp);
-    // de-bitslicing
     let mut list = [0u64; 1 << GFBITS];
     de_bitslicing(&mut list, &prod);
     for i in 0..(1 << GFBITS) {
@@ -522,7 +505,6 @@ pub(crate) fn pk_gen(
         list[i] |= i as u64;
         list[i] |= u64::from(perm[i]) << 31;
     }
-    // sort
     crate::sort::uint64_sort(&mut list);
     for i in 1..(1 << GFBITS) {
         if (list[i - 1] >> 31) == (list[i] >> 31) {
@@ -548,11 +530,9 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Initialize ops as identity
     for i in 0..PK_NROWS {
         ops[i * nblocks_i + (i / 64)] = 1u64 << (i % 64);
     }
-    // column tracking
     let column = if tail != 0 {
         let mut col = vec![0u64; PK_NROWS];
         for i in 0..PK_NROWS {
@@ -562,7 +542,6 @@ pub(crate) fn pk_gen(
     } else {
         None
     };
-    // Gaussian elimination
     for row in 0..PK_NROWS {
         let i = row >> 6;
         let j = row & 63;
@@ -587,7 +566,6 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Back-substitution
     for row in (0..PK_NROWS).rev() {
         for k in 0..row {
             let mask = 0u64.wrapping_sub((mat[k * nblocks_h + (row / 64)] >> (row % 64)) & 1);
@@ -596,7 +574,6 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Apply linear map to non-systematic part
     for j in nblocks_i..nblocks_h {
         for k in 0..GFBITS {
             mat[k * nblocks_h + j] = prod[j][k];
@@ -611,13 +588,11 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Restore column
     if let Some(ref column) = column {
         for i in 0..PK_NROWS {
             mat[i * nblocks_h + block_idx] = column[i];
         }
     }
-    // Compute the public key rows
     pk.clear();
     for row in 0..PK_NROWS {
         let mut one_row = vec![0u64; nblocks_h];
@@ -660,7 +635,6 @@ pub(crate) fn pk_gen(
     pk.truncate(expected);
     Ok(())
 }
-// ── Syndrome computation ───────────────────────────────────────────────
 #[must_use]
 pub(crate) fn syndrome_from_public_key(pk: &[u8], e: &[u8]) -> [u8; SYND_BYTES] {
     let mut s = [0u8; SYND_BYTES];
@@ -724,25 +698,20 @@ pub(crate) fn decrypt_error_vector(sk: &[u8], c: &[u8]) -> ([u8; SYS_N / 8], u8)
     let irr_start = 40usize;
     let cond_start = irr_start + IRR_BYTES;
     let irr_bytes = &sk[irr_start..cond_start];
-    // Read Goppa polynomial from SK
     let mut g = SecretArray::<u16, { SYS_T + 1 }>::new();
     for i in 0..SYS_T {
         g[i] = load_gf(&irr_bytes[i * 2..]) & GFMASK;
     }
     g[SYS_T] = 1;
-    // Reconstruct support from Benes control bits
     let cond = &sk[cond_start..cond_start + COND_BYTES];
     let mut support = SecretArray::<u16, SYS_N>::new();
     support_gen(&mut support, cond);
-    // Run the clean-implementation decoder (synd -> bm -> root -> verify)
     let (e_vec, valid) =
         decode::decrypt_with_support::<GFBITS>(g.as_ref(), support.as_ref(), c, SYS_N, SYS_T);
     let mut e = [0u8; SYS_N / 8];
     e.copy_from_slice(&e_vec);
     (e, valid)
 }
-// ── Sort helpers ───────────────────────────────────────────────────────
-// ── Control bits (shared with GFBITS=13) ───────────────────────────────
 fn controlbits_layer(p: &mut [i16], cb: &[u8], s: usize, n: usize) {
     let stride = 1usize << s;
     let mut index = 0usize;

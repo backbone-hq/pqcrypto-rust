@@ -36,14 +36,12 @@ macro_rules! define_variant {
         #[doc = concat!($doc_variant, " public key.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct PublicKey {
-            /// The raw public key bytes.
             pub pk: Vec<u8>,
         }
 
         #[doc = concat!($doc_variant, " signature.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Signature {
-            /// The raw signature bytes.
             pub sig: Vec<u8>,
         }
 
@@ -96,12 +94,10 @@ macro_rules! define_variant {
             keygen(seed)
         }
 
-        /// Generate a keypair from a seed (alias for keygen).
         pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
             keygen(seed)
         }
 
-        /// Generate a keypair from a 32-byte seed.
         pub fn keypair_from_seed_checked(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
             keygen_checked(seed)
         }
@@ -264,7 +260,6 @@ macro_rules! define_variant {
             verify_prehashed_with_context(pk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, signature, ctx)
         }
 
-        // AsRef impls
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] {
                 &self.pk

@@ -1,4 +1,3 @@
-// GFBITS=13 variant for mceliece8192128
 use crate::common::*;
 use crate::decode;
 use crate::vec_ops::gf13::*;
@@ -30,16 +29,12 @@ fn fft_postprocess(out: &mut [[Vec64; GFBITS]; 128], powers: &[[u64; 13]; 128]) 
     }
 }
 
-// ── Shake256 helper ─────────────────────────────────────────────────────────
-
 /// Hash `input` with SHAKE-256, writing the result into `output`.
 pub(crate) fn shake256_into(output: &mut [u8], input: &[u8]) {
     let mut x = sha3::Shake256::default();
     x.update(input);
     x.finalize_xof().read(output);
 }
-
-// ── Load / store helpers ────────────────────────────────────────────────────
 
 /// Load up to 8 bytes from `b` into a `u64` (little-endian).
 fn load8(b: &[u8]) -> u64 {
@@ -96,8 +91,6 @@ fn store_i(out: &mut [u8], v: u64, i: usize) {
         out[j] = u8::try_from((v >> (j * 8)) & 0xff).expect("byte fits in u8");
     }
 }
-
-// ── Gao-Mateer FFT (128-point, 2-way vectors) ────────────────────────
 
 /// Radix-conversion step of the forward Gao-Mateer FFT.
 fn radix_conversions(inp: &mut [[Vec64; GFBITS]; 2], scalars_2x: &[[[u64; 13]; 2]; 5]) {
@@ -360,8 +353,6 @@ pub(crate) fn fft(
     fft_postprocess(out, powers);
 }
 
-// ── Benes network (128-element, for GFBITS=13) ───────────────────────
-
 /// Benes network inner layer (horizontal-style bit manipulation).
 fn layer_in(data: &mut [u64; 128], bits: &[u64], lgs: usize) {
     let s = 1 << lgs;
@@ -520,8 +511,6 @@ pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     }
 }
 
-// ── irr_load (bitsliced, 2-vector for GFBITS=13) ─────────────────────
-
 /// Load an irreducible Goppa polynomial from bytes into bitsliced 2-vector form.
 fn irr_load(out: &mut [[Vec64; GFBITS]; 2], input: &[u8]) {
     let mut irr = [0u16; SYS_T + 1];
@@ -544,8 +533,6 @@ fn irr_load(out: &mut [[Vec64; GFBITS]; 2], input: &[u8]) {
         out[1][i] = v1;
     }
 }
-
-// ── Support generation (bitsliced for GFBITS=13) ─────────────────────
 
 /// Generate the field-element support from Benes control bits.
 pub(crate) fn support_gen(support: &mut [Gf; SYS_N], c: &[u8]) {
@@ -582,14 +569,10 @@ fn bitrev(value: Gf) -> Gf {
     x >> 3
 }
 
-// ── Scalar GF operations (for genpoly_gen) ───────────────────────────
-
-/// Multiply two GF(2^13) elements.
 fn gf_mul(a: Gf, b: Gf) -> Gf {
     crate::gf::gf_mul::<13>(a, b)
 }
 
-/// Compute the inverse of a GF(2^13) element.
 fn gf_inv(den: Gf) -> Gf {
     let tmp_11 = gf_sqmul(den, den);
     let tmp_1111 = gf_sq2mul(tmp_11, tmp_11);
@@ -651,15 +634,12 @@ fn gf_sq2mul(inp: Gf, m: Gf) -> Gf {
     gf_mul(gf_sq2(inp), m)
 }
 
-/// Return `0` if `a` is non-zero, `1` if `a` is zero.
 fn gf_iszero(a: Gf) -> Gf {
     let mut t = u32::from(a);
     t = t.wrapping_sub(1);
     t >>= 19;
     u16::try_from(t).expect("0 or 1 fits in u16")
 }
-
-// ── genpoly_gen (scalar, same as GFBITS=12) ──────────────────────────
 
 /// Multiply two polynomials over GF(2^13) and reduce modulo the Goppa polynomial.
 fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
@@ -694,7 +674,6 @@ fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
         }
         _ => {
             // SAFETY: SYS_T is monomorphized by the variant parameter; all supported
-            // values (64, 96, 119, 128) are handled above.
             unreachable!()
         }
     }
@@ -739,8 +718,6 @@ pub(crate) fn genpoly_gen(out: &mut [Gf; SYS_T], f: &[Gf; SYS_T]) -> bool {
     out.copy_from_slice(&mat[SYS_T]);
     false
 }
-
-// ── Public key generation (GFBITS=13 version from pk_gen.c) ─────────
 
 /// De-bitslice a 128-element array of `[Vec64; GFBITS]` into plain `u64` values.
 fn de_bitslicing(out: &mut [u64], inp: &[[Vec64; GFBITS]; 128]) {
@@ -819,7 +796,6 @@ pub(crate) fn pk_gen(
         vec_mul(&mut tmp, &tmp_copy, &eval[i + 1]);
     }
     vec_copy(&mut prod[0], &tmp);
-    // de-bitslicing
     let mut list = [0u64; 1 << GFBITS];
     de_bitslicing(&mut list, &prod);
     for i in 0..(1 << GFBITS) {
@@ -827,7 +803,6 @@ pub(crate) fn pk_gen(
         list[i] |= i as u64;
         list[i] |= u64::from(perm[i]) << 31;
     }
-    // sort
     crate::sort::uint64_sort(&mut list);
     for i in 1..(1 << GFBITS) {
         if (list[i - 1] >> 31) == (list[i] >> 31) {
@@ -853,11 +828,9 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Initialize ops as identity
     for i in 0..PK_NROWS {
         ops[i * nblocks_i + (i / 64)] = 1u64 << (i % 64);
     }
-    // column tracking (only needed when non-systematic data shares a word with systematic)
     let column = if tail != 0 {
         let mut col = vec![0u64; PK_NROWS];
         for i in 0..PK_NROWS {
@@ -867,7 +840,6 @@ pub(crate) fn pk_gen(
     } else {
         None
     };
-    // Gaussian elimination
     for row in 0..PK_NROWS {
         let i = row >> 6;
         let j = row & 63;
@@ -892,7 +864,6 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Back-substitution
     for row in (0..PK_NROWS).rev() {
         for k in 0..row {
             let mask = 0u64.wrapping_sub((mat[k * nblocks_h + (row / 64)] >> (row % 64)) & 1);
@@ -901,7 +872,6 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Apply linear map to non-systematic part
     for j in nblocks_i..nblocks_h {
         for k in 0..GFBITS {
             mat[k * nblocks_h + j] = prod[j][k];
@@ -916,13 +886,11 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Restore column (non-systematic data in mixed word)
     if let Some(ref column) = column {
         for i in 0..PK_NROWS {
             mat[i * nblocks_h + block_idx] = column[i];
         }
     }
-    // Compute the public key rows
     pk.clear();
     for row in 0..PK_NROWS {
         let mut one_row = vec![0u64; nblocks_h];
@@ -961,19 +929,15 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    // Truncate to exact public key size
     let expected = PK_NROWS * PK_ROW_BYTES;
     pk.truncate(expected);
     Ok(())
 }
 
-// ── Syndrome computation (for encrypt/decaps) ────────────────────────
-
 /// Compute the syndrome of a ciphertext using the public key.
 #[must_use]
 pub(crate) fn syndrome_from_public_key(pk: &[u8], e: &[u8]) -> [u8; SYND_BYTES] {
     let mut s = [0u8; SYND_BYTES];
-    // Identity contribution: s = bitwise e[0..PK_NROWS]
     let pk_rows_bytes = PK_NROWS / 8;
     let pk_rows_rem = PK_NROWS % 8;
     s[..pk_rows_bytes].copy_from_slice(&e[..pk_rows_bytes]);
@@ -1030,8 +994,6 @@ pub(crate) fn syndrome_from_public_key(pk: &[u8], e: &[u8]) -> [u8; SYND_BYTES] 
     s
 }
 
-// ── Decrypt error vector (from C decrypt.c) ─────────────────────────
-
 /// Decrypt the error vector from a ciphertext using the secret key.
 ///
 /// Returns the error vector (as bytes) and a validity flag.
@@ -1040,26 +1002,20 @@ pub(crate) fn decrypt_error_vector(sk: &[u8], c: &[u8]) -> ([u8; SYS_N / 8], u8)
     let irr_start = 40usize;
     let cond_start = irr_start + IRR_BYTES;
     let irr_bytes = &sk[irr_start..cond_start];
-    // Read Goppa polynomial from SK
     let mut g = SecretArray::<u16, { SYS_T + 1 }>::new();
     for i in 0..SYS_T {
         g[i] = load_gf(&irr_bytes[i * 2..]) & GFMASK;
     }
     g[SYS_T] = 1;
-    // Reconstruct support from Benes control bits
     let cond = &sk[cond_start..cond_start + COND_BYTES];
     let mut support = SecretArray::<u16, SYS_N>::new();
     support_gen(&mut support, cond);
-    // Run the clean-implementation decoder (synd -> bm -> root -> verify)
     let (e_vec, valid) =
         decode::decrypt_with_support::<GFBITS>(g.as_ref(), support.as_ref(), c, SYS_N, SYS_T);
     let mut e = [0u8; SYS_N / 8];
     e.copy_from_slice(&e_vec);
     (e, valid)
 }
-
-// ── Sort helpers (used by pk_gen) ──────────────────────────────────────
-// ── Control bits (shared with GFBITS=12) ───────────────────────────────
 
 /// Apply one layer of control bits to the partial permutation `p`.
 fn controlbits_layer(p: &mut [i16], cb: &[u8], s: usize, n: usize) {

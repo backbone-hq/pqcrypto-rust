@@ -1,6 +1,6 @@
 [package]
 name = "backbone-mceliece"
-version = "0.0.1"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -8,13 +8,14 @@ authors.workspace = true
 description = "Classic McEliece KEM implementation: code-based post-quantum key encapsulation."
 categories = ["cryptography", "no-std"]
 keywords = ["mceliece", "kem", "post-quantum", "code-based", "cryptography"]
+exclude = ["tests/"]
 
 [lints]
 workspace = true
 
 [dependencies]
 safe_arch = { version = "1", optional = true }
-backbone-pqcrypto-internals = { path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.1.0", path = "../backbone-pqcrypto-internals", default-features = false }
 zeroize = { workspace = true }
 sha3 = { workspace = true, default-features = false }
 getrandom = { workspace = true, default-features = false }

@@ -34,7 +34,6 @@ macro_rules! roundtrip_test {
     };
 }
 
-// SHAKE variants
 roundtrip_test!(roundtrip_shake_128s, shake128s, Shake128s);
 roundtrip_test!(roundtrip_shake_128f, shake128f, Shake128f);
 roundtrip_test!(roundtrip_shake_192s, shake192s, Shake192s);
@@ -42,7 +41,6 @@ roundtrip_test!(roundtrip_shake_192f, shake192f, Shake192f);
 roundtrip_test!(roundtrip_shake_256s, shake256s, Shake256s);
 roundtrip_test!(roundtrip_shake_256f, shake256f, Shake256f);
 
-// SHA-2 variants
 roundtrip_test!(roundtrip_sha2_128s, sha2_128s, Sha2_128s);
 roundtrip_test!(roundtrip_sha2_128f, sha2_128f, Sha2_128f);
 roundtrip_test!(roundtrip_sha2_192s, sha2_192s, Sha2_192s);

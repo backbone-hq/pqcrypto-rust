@@ -1,4 +1,3 @@
-// GFBITS=13 specific vector operations (vec_mul, vec_sq, vec_inv)
 use crate::common::*;
 
 const GFBITS: usize = 13;

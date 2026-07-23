@@ -62,7 +62,6 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            /// Return the secret key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.sk
             }
@@ -103,9 +102,6 @@ macro_rules! define_variant {
             keygen_checked(seed)
         }
 
-        // -----------------------------------------------------------------------
-        // Internal helpers (submission API — raw, no FIPS 205 prefix)
-        // -----------------------------------------------------------------------
 
         fn _sign_deterministic_submission(
             sk: &SecretKey,
@@ -120,9 +116,6 @@ macro_rules! define_variant {
             $crate::sign::verify::<$param_type>(&pk.pk, msg, &signature.sig)
         }
 
-        // -----------------------------------------------------------------------
-        // Signing — FIPS 205 SLH-DSA API
-        // -----------------------------------------------------------------------
 
         #[doc = concat!("Sign a message using ", stringify!($param_type), " (FIPS 205 SLH-DSA).")]
         ///
@@ -217,9 +210,6 @@ macro_rules! define_variant {
             sign_prehashed_with_context(sk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, ctx, seed)
         }
 
-        // -----------------------------------------------------------------------
-        // Verification — FIPS 205 SLH-DSA API
-        // -----------------------------------------------------------------------
 
         #[doc = concat!("Verify a ", stringify!($param_type), " signature (FIPS 205 SLH-DSA).")]
         #[must_use]
@@ -325,9 +315,6 @@ macro_rules! define_variant {
             Ok(formatted)
         }
 
-        // -----------------------------------------------------------------------
-        // AsRef impls
-        // -----------------------------------------------------------------------
 
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] {

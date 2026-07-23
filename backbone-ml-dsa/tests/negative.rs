@@ -1,18 +1,9 @@
 //! ML-DSA (FIPS 204) signature negative tests.
-//!
-//! Verifies that verification correctly rejects invalid inputs:
-//! - Corrupted message
-//! - Wrong public key
-//! - Corrupted signature bytes
-//! - Truncated signature (boundary case: empty sig, half-length sig)
-//! - Empty message roundtrip (positive sanity check)
 
 use backbone_ml_dsa::mldsa44;
 use backbone_ml_dsa::mldsa65;
 use backbone_ml_dsa::mldsa87;
 use backbone_ml_dsa::params::{Mldsa44, Params};
-
-// ─── ML-DSA-44 ─────────────────────────────────────────────────────────────
 
 #[test]
 fn mldsa44_negative_message() {
@@ -70,13 +61,11 @@ fn mldsa44_negative_truncated_sig() {
     let msg = b"hello ml-dsa negative test";
     let sig = mldsa44::sign(&sk, msg).unwrap();
     assert!(mldsa44::verify(&pk, msg, &sig));
-    // Empty signature
     let empty_sig = mldsa44::Signature { sig: vec![] };
     assert!(
         !mldsa44::verify(&pk, msg, &empty_sig),
         "verify should reject empty sig"
     );
-    // Half-length signature
     let half_bytes = sig.sig[..sig.sig.len() / 2].to_vec();
     let half_sig = mldsa44::Signature { sig: half_bytes };
     assert!(
@@ -96,8 +85,6 @@ fn mldsa44_negative_empty_msg() {
         "empty message should verify"
     );
 }
-
-// ─── ML-DSA-65 ─────────────────────────────────────────────────────────────
 
 #[test]
 fn mldsa65_negative_message() {
@@ -155,13 +142,11 @@ fn mldsa65_negative_truncated_sig() {
     let msg = b"hello ml-dsa negative test";
     let sig = mldsa65::sign(&sk, msg).unwrap();
     assert!(mldsa65::verify(&pk, msg, &sig));
-    // Empty signature
     let empty_sig = mldsa65::Signature { sig: vec![] };
     assert!(
         !mldsa65::verify(&pk, msg, &empty_sig),
         "verify should reject empty sig"
     );
-    // Half-length signature
     let half_bytes = sig.sig[..sig.sig.len() / 2].to_vec();
     let half_sig = mldsa65::Signature { sig: half_bytes };
     assert!(
@@ -181,8 +166,6 @@ fn mldsa65_negative_empty_msg() {
         "empty message should verify"
     );
 }
-
-// ─── ML-DSA-87 ─────────────────────────────────────────────────────────────
 
 #[test]
 fn mldsa87_negative_message() {
@@ -240,13 +223,11 @@ fn mldsa87_negative_truncated_sig() {
     let msg = b"hello ml-dsa negative test";
     let sig = mldsa87::sign(&sk, msg).unwrap();
     assert!(mldsa87::verify(&pk, msg, &sig));
-    // Empty signature
     let empty_sig = mldsa87::Signature { sig: vec![] };
     assert!(
         !mldsa87::verify(&pk, msg, &empty_sig),
         "verify should reject empty sig"
     );
-    // Half-length signature
     let half_bytes = sig.sig[..sig.sig.len() / 2].to_vec();
     let half_sig = mldsa87::Signature { sig: half_bytes };
     assert!(
@@ -286,8 +267,6 @@ fn mldsa44_rejects_malformed_raw_inputs_without_panicking() {
     assert!(!mldsa44::verify(&bad_pk, msg, &sig));
     assert!(mldsa44::verify_result(&bad_pk, msg, &sig).is_err());
     assert!(mldsa44::verify_result(&pk, msg, &bad_sig).is_err());
-    // sign with garbage SK passes length check but signing with all-zero
-    // key may be slow — test fast-failure paths above instead.
     let bad_sk_short = mldsa44::SecretKey::from_bytes(&vec![0u8; 2559]);
     assert!(bad_sk_short.is_err());
 }

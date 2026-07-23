@@ -14,9 +14,9 @@ pub trait Params {
     const W: usize;
     /// Public key size: 32 (seed K) + rounded.
     const PK_BYTES: usize;
-    /// Secret key size: small enc + PK.
+    /// Secret key size: small enc + PK + 64 (rho + cache).
     const SK_BYTES: usize;
-    /// Ciphertext size: 32 + rounded(B) + 128 (packed C).
+    /// Ciphertext size: rounded(B) + 128 (packed C) + 32 (confirm).
     const CT_BYTES: usize;
     /// Shared secret size.
     const SS_BYTES: usize;

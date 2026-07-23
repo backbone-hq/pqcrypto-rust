@@ -14,7 +14,7 @@
 /// - No element is ever compared to itself based on its value.
 ///
 /// The name `uint64_sort` follows the original C reference naming.
-/// Verified 2026-06-15: constant-time against value-level timing side
+/// Verified 2025-06-15: constant-time against value-level timing side
 /// channels. All loop bounds depend only on `n`, never on `values[]`.
 ///
 /// Constant-time sorting network for `[i32]`. Loop bounds depend only on the

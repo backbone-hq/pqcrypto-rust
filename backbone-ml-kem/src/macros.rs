@@ -20,11 +20,9 @@ macro_rules! define_variant {
         const _PK_SIZE: usize = <$params as $crate::params::Params>::PK_SIZE;
         const _CT_SIZE: usize = <$params as $crate::params::Params>::CT_SIZE;
 
-        // PublicKey struct
         #[doc = concat!($doc_variant, " public key.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct PublicKey {
-            /// The raw public key bytes.
             pub pk: Vec<u8>,
         }
 
@@ -38,7 +36,6 @@ macro_rules! define_variant {
             }
         }
 
-        // SecretKey struct
         #[doc = concat!($doc_variant, " secret key.")]
         #[cfg_attr(feature = "zeroize", derive(Zeroize))]
         #[cfg_attr(feature = "zeroize", zeroize(drop))]
@@ -63,19 +60,15 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            /// Return the raw secret key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.sk
             }
         }
 
-        // Encapsulation struct
         /// Result of a successful encapsulation.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Encapsulation {
-            /// The shared secret (32 bytes).
             pub shared_secret: [u8; $ss_size],
-            /// The ciphertext.
             pub ciphertext: Vec<u8>,
         }
 
@@ -88,7 +81,6 @@ macro_rules! define_variant {
             Ok((PublicKey { pk }, SecretKey { sk }))
         }
 
-        /// Generate a keypair from a seed (alias for keygen).
         pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
             keygen(seed)
         }
@@ -132,7 +124,6 @@ macro_rules! define_variant {
             )
         }
 
-        // AsRef impls
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] { &self.pk }
         }

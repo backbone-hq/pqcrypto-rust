@@ -18,7 +18,6 @@ pub(crate) fn expand_matrix<P: Params>(a: &mut [Vec<Poly>], rho: &[u8]) {
 
             let mut reader = shake.finalize_xof();
             // FIPS 204 rejection sampling to fill a[i][j]
-            // Read in SHAKE-128 block-sized chunks (168 bytes) to match C ref
             let block = 168;
             let mut buf = [0u8; 168];
             let buf = &mut buf[..block];
@@ -34,7 +33,7 @@ pub(crate) fn expand_matrix<P: Params>(a: &mut [Vec<Poly>], rho: &[u8]) {
                     | (i32::from(buf[buf_pos + 1]) << 8)
                     | (i32::from(buf[buf_pos + 2]) << 16);
                 buf_pos += 3;
-                let val = val & 0x7FFFFF; // 23 bits
+                let val = val & 0x7FFFFF;
                 if val < 8380417 {
                     p.coeffs[coeff_idx] = val;
                     coeff_idx += 1;

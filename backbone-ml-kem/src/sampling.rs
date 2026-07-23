@@ -37,7 +37,6 @@ pub(crate) fn sample_cbd(seed_32: &[u8; 32], eta: usize, nonce: u8) -> [i16; 256
                 b += u32::from((buf[byte_idx_b] >> bit_idx_b) & 1);
             }
         }
-        // CBD difference a-b is in [-eta, eta], fits in i16
         let a_i16 = i16::try_from(a).expect("a (max eta=3) fits in i16");
         let b_i16 = i16::try_from(b).expect("b (max eta=3) fits in i16");
         let diff = a_i16.wrapping_sub(b_i16);
@@ -57,7 +56,6 @@ pub(crate) fn sample_ntt<const K: usize>(rho: &[u8; 32]) -> [[[i16; N]; K]; K] {
         for j in 0..K {
             let mut input = [0u8; 34];
             input[..32].copy_from_slice(rho);
-            // C ref gen_a: a[i][j] = SampleNTT(ρ, j, i) using bytes (j, i)
             input[32] = u8::try_from(j).expect("j < 256");
             input[33] = u8::try_from(i).expect("i < 256");
 
@@ -72,7 +70,6 @@ pub(crate) fn sample_ntt<const K: usize>(rho: &[u8; 32]) -> [[[i16; N]; K]; K] {
                     buf_idx = 0;
                     reader.read(&mut buf);
                 }
-                // Extract two 12-bit values from 3 bytes (matching C ref)
                 let val0 = (u16::from(buf[buf_idx]) | (u16::from(buf[buf_idx + 1]) << 8)) & 0xFFF;
                 let val1 = (u16::from(buf[buf_idx + 1]) >> 4) | (u16::from(buf[buf_idx + 2]) << 4);
                 buf_idx += 3;

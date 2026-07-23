@@ -53,7 +53,6 @@ macro_rules! negative_tests {
             #[test]
             fn negative_invalid_secret_key_length() {
                 let (_pk, sk, ct, _ss) = roundtrip();
-                // from_bytes rejects wrong-length inputs
                 assert!(
                     SecretKey::from_bytes(&[]).is_err(),
                     "empty sk should be rejected"
@@ -62,7 +61,6 @@ macro_rules! negative_tests {
                     SecretKey::from_bytes(&sk.as_ref()[..sk.as_ref().len() / 2]).is_err(),
                     "truncated sk should be rejected"
                 );
-                // A valid-length but garbage SK still causes decaps to fall back
                 let garbage_sk = SecretKey::from_bytes(&vec![0xABu8; sk.as_ref().len()]).unwrap();
                 let ss = decaps(&garbage_sk, &ct).expect("garbage sk decaps should fall back");
                 assert_ne!(ss, [0u8; 32], "garbage sk should produce non-zero fallback");

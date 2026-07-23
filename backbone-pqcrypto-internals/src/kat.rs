@@ -21,7 +21,6 @@ pub fn hex_decode(hex: &str) -> Vec<u8> {
     if hex.is_empty() {
         return Vec::new();
     }
-    // Left-pad odd-length hex with a zero nibble (common in KAT files).
     let padded = if !hex.len().is_multiple_of(2) {
         alloc::format!("0{hex}")
     } else {
@@ -96,7 +95,6 @@ mod tests {
 
     #[test]
     fn test_hex_decode_odd_length() {
-        // Odd-length hex is left-padded with a zero nibble
         assert_eq!(hex_decode("abb"), vec![0x0a, 0xbb]);
     }
 

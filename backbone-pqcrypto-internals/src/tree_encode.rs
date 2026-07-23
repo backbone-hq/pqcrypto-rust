@@ -2,18 +2,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use zeroize::Zeroize;
 
-// Reference: https://ntruprime.cr.yp.to/ntruprime-20200930.sage
-//
-// Encode(R, M) converts values R[i] in [0, M[i]) to a byte string using a
-// binary-tree product encoding.  Decode(S, M) is the inverse.
-//
-// The caller supplies the VALUES (already normalised to [0, m_val)) and the
-// MODULI (all equal to m_val).  The tree progresses level by level:
-//   1. Pair adjacent entries; for each pair output ceil(log_256(m^2/LIMIT))
-//      low bytes (where LIMIT = 16384).
-//   2. The reduced combined value and modulus form the next level's entries.
-//   3. Recurse until one entry remains (base case).
-
 const TREE_LIMIT: u64 = 16384;
 
 /// Encode a list of values and moduli into a byte vector.
@@ -49,7 +37,6 @@ pub fn rounded_encode(mut values: Vec<u64>, mut mods: Vec<u64>) -> Vec<u8> {
         mods = next_mods;
     }
 
-    // Base case: one entry
     if !mods.is_empty() {
         let mut r = values[0];
         let mut m = mods[0];
@@ -80,7 +67,7 @@ pub fn rounded_decode(input: &[u8], m_val: u64, count: usize) -> Option<Vec<u64>
             let mut m = mods[0];
             while m > 1 {
                 if *idx >= input.len() {
-                    return None; // truncated
+                    return None;
                 }
                 val |= u64::from(input[*idx]) << shift;
                 *idx += 1;
@@ -90,7 +77,6 @@ pub fn rounded_decode(input: &[u8], m_val: u64, count: usize) -> Option<Vec<u64>
             return Some(vec![val % mods[0]]);
         }
 
-        // First pass: read the low bytes for each pair
         let mut bottom: Vec<(u64, u64)> = Vec::with_capacity(mods.len() / 2);
         let mut next_mods: Vec<u64> = Vec::with_capacity(mods.len() / 2 + 1);
 
@@ -115,10 +101,8 @@ pub fn rounded_decode(input: &[u8], m_val: u64, count: usize) -> Option<Vec<u64>
             next_mods.push(mods[i]);
         }
 
-        // Recurse to get the high parts
         let high = decode_rec(input, idx, &next_mods)?;
 
-        // Second pass: combine low + high, split into pairs
         let mut result = Vec::with_capacity(mods.len());
         let mut hi = 0;
         let mut bi = 0;

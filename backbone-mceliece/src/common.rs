@@ -1,5 +1,3 @@
-// Shared types, re-exports, and utility functions for all McEliece variants
-
 pub(crate) use sha3::digest::{ExtendableOutput, Update, XofReader};
 
 pub(crate) type Gf = u16;

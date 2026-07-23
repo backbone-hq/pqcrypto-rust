@@ -55,7 +55,6 @@ pub(crate) fn vect_set_random_fixed_weight_keygen<P: Params>(seed: &[u8], v: &mu
     vect_set_random_fixed_weight_keygen_from_xof::<P, _>(&mut reader, v);
 }
 
-/// Generate a random vector with exactly `weight` nonzero bits (fixed Hamming weight).
 /// Uses Algorithm 5 from https://eprint.iacr.org/2021/1631.pdf.
 /// `rand_bytes` must have at least `4 * weight` bytes.
 pub(crate) fn vect_set_random_fixed_weight<P: Params>(
@@ -86,7 +85,6 @@ pub(crate) fn vect_set_random_fixed_weight<P: Params>(
     write_support_to_vector(v, &support, weight);
 }
 
-/// Generate a random vector (each bit independently uniform).
 /// `rand_bytes` must have at least VEC_N_SIZE_BYTES bytes.
 pub(crate) fn vect_set_random<P: Params>(rand_bytes: &[u8], v: &mut [u64]) {
     crate::parsing::load8_arr(v, rand_bytes);

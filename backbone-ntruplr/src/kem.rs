@@ -256,7 +256,6 @@ pub(crate) fn keypair<
     Ok(())
 }
 
-/// Encapsulate a shared secret under a public key.
 pub(crate) fn encaps<
     const P: usize,
     const Q: i16,
@@ -321,7 +320,6 @@ pub(crate) fn encaps<
     Ok((ss, ct))
 }
 
-/// Decapsulate a shared secret from a ciphertext using a secret key.
 pub(crate) fn decaps<
     const P: usize,
     const Q: i16,
@@ -473,7 +471,6 @@ mod tests {
         assert!(pk.iter().any(|&b| b != 0));
         assert!(sk.iter().any(|&b| b != 0));
 
-        // Test encaps/decaps roundtrip.
         let r = [0x13u8; 32];
         let (ss_enc, ct) = encaps::<P, Q, TAU0, TAU1, TAU2, TAU3>(&pk, &r, W, CT_BYTES).unwrap();
         let ss_dec = decaps::<P, Q, TAU0, TAU1, TAU2, TAU3>(&sk, &ct, W).unwrap();

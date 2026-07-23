@@ -19,14 +19,10 @@ macro_rules! define_variant {
 
         const _CT_BYTES: usize = <$params as $crate::params::Params>::CT_BYTES;
 
-        // -----------------------------------------------------------------------
-        // Public types
-        // -----------------------------------------------------------------------
 
         #[doc = concat!($doc_variant, " public key.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct PublicKey {
-            /// The raw public key bytes.
             pub pk: Vec<u8>,
         }
 
@@ -60,13 +56,9 @@ macro_rules! define_variant {
         pub struct Encapsulation {
             /// The shared secret.
             pub shared_secret: [u8; $ss_size],
-            /// The ciphertext.
             pub ciphertext: Vec<u8>,
         }
 
-        // -----------------------------------------------------------------------
-        // Key generation
-        // -----------------------------------------------------------------------
 
         #[doc = concat!("Generate a ", $doc_variant, " keypair deterministically from a seed.")]
         pub fn keygen(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
@@ -77,14 +69,10 @@ macro_rules! define_variant {
             Ok((PublicKey { pk }, SecretKey { sk }))
         }
 
-        /// Generate a keypair from a seed (alias for keygen).
         pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
             keygen(seed)
         }
 
-        // -----------------------------------------------------------------------
-        // Encapsulation / decapsulation
-        // -----------------------------------------------------------------------
 
         #[doc = concat!("Encapsulate a shared secret under a ", $doc_variant, " public key.")]
         ///
@@ -124,9 +112,6 @@ macro_rules! define_variant {
             Ok(ss)
         }
 
-        // -----------------------------------------------------------------------
-        // AsRef impls
-        // -----------------------------------------------------------------------
 
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] {
@@ -149,15 +134,11 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            /// Return the raw secret key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.sk
             }
         }
 
-        // -----------------------------------------------------------------------
-        // Inline tests
-        // -----------------------------------------------------------------------
 
         #[cfg(test)]
         mod tests {

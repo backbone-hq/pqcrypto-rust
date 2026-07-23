@@ -1,15 +1,6 @@
 //! HQC (FIPS 209) negative tests.
-//!
-//! Verifies decapsulation behavior for invalid inputs:
-//! - Wrong secret key (from a different keypair) returns a fallback secret
-//! - Corrupted ciphertext returns a fallback secret
-//! - Invalid-length inputs
-//!
-//! Uses the public per-variant API: keypair_from_seed, encaps, decaps.
 
 use backbone_hqc::{hqc128, hqc192, hqc256};
-
-// ─── HQC-1 ───
 
 fn make_hqc128(seed: &[u8]) -> (hqc128::PublicKey, hqc128::SecretKey, Vec<u8>, [u8; 32]) {
     let (pk, sk) = hqc128::keypair_from_seed(seed).expect("test keygen");
@@ -63,7 +54,6 @@ fn hqc128_negative_invalid_ct_len() {
 
 #[test]
 fn hqc128_negative_invalid_sk_len() {
-    // SecretKey::from_bytes rejects wrong-length inputs
     assert!(
         hqc128::SecretKey::from_bytes(&[]).is_err(),
         "from_bytes with empty data should fail"
@@ -72,15 +62,12 @@ fn hqc128_negative_invalid_sk_len() {
         hqc128::SecretKey::from_bytes(&[0u8; 1]).is_err(),
         "from_bytes with too-short data should fail"
     );
-    // A properly constructed key works
     let (pk, sk) =
         hqc128::keypair_from_seed(b"0123456789abcdef0123456789abcdef").expect("test keygen");
     let enc = hqc128::encaps(&pk).expect("test encaps");
     let ss = hqc128::decaps(&sk, &enc.ciphertext).expect("valid decaps");
     assert_eq!(enc.shared_secret, ss);
 }
-
-// ─── HQC-3 ───
 
 fn make_hqc192(seed: &[u8]) -> (hqc192::PublicKey, hqc192::SecretKey, Vec<u8>, [u8; 32]) {
     let (pk, sk) = hqc192::keypair_from_seed(seed).expect("test keygen");
@@ -134,7 +121,6 @@ fn hqc192_negative_invalid_ct_len() {
 
 #[test]
 fn hqc192_negative_invalid_sk_len() {
-    // SecretKey::from_bytes rejects wrong-length inputs
     assert!(
         hqc192::SecretKey::from_bytes(&[]).is_err(),
         "from_bytes with empty data should fail"
@@ -143,15 +129,12 @@ fn hqc192_negative_invalid_sk_len() {
         hqc192::SecretKey::from_bytes(&[0u8; 1]).is_err(),
         "from_bytes with too-short data should fail"
     );
-    // A properly constructed key works
     let (pk, sk) =
         hqc192::keypair_from_seed(b"0123456789abcdef0123456789abcdef").expect("test keygen");
     let enc = hqc192::encaps(&pk).expect("test encaps");
     let ss = hqc192::decaps(&sk, &enc.ciphertext).expect("valid decaps");
     assert_eq!(enc.shared_secret, ss);
 }
-
-// ─── HQC-5 ───
 
 fn make_hqc256(seed: &[u8]) -> (hqc256::PublicKey, hqc256::SecretKey, Vec<u8>, [u8; 32]) {
     let (pk, sk) = hqc256::keypair_from_seed(seed).expect("test keygen");
@@ -205,7 +188,6 @@ fn hqc256_negative_invalid_ct_len() {
 
 #[test]
 fn hqc256_negative_invalid_sk_len() {
-    // SecretKey::from_bytes rejects wrong-length inputs
     assert!(
         hqc256::SecretKey::from_bytes(&[]).is_err(),
         "from_bytes with empty data should fail"
@@ -214,7 +196,6 @@ fn hqc256_negative_invalid_sk_len() {
         hqc256::SecretKey::from_bytes(&[0u8; 1]).is_err(),
         "from_bytes with too-short data should fail"
     );
-    // A properly constructed key works
     let (pk, sk) =
         hqc256::keypair_from_seed(b"0123456789abcdef0123456789abcdef").expect("test keygen");
     let enc = hqc256::encaps(&pk).expect("test encaps");

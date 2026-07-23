@@ -1,6 +1,4 @@
-//! McEliece 688128f (13-bit field, 6688-bit code, 128 errors, fast variant).
-//!
-//! Provides `keygen`, `encaps`, `decaps`, `PublicKey`, and `SecretKey`.
+//! McEliece 6688128f (13-bit field, 6688-bit code, 128 errors, fast variant).
 
 use crate::core_fft::gf13_6688128;
 use crate::fft_tables::v6688128f::{

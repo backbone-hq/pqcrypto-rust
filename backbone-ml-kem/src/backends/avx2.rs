@@ -26,25 +26,16 @@ fn montgomery_mul_avx2(r: m256i, zeta: i16) -> m256i {
     let qinv = splat_i16(-3327);
     let flip = splat_i16(i16::MIN);
 
-    // Full i32 product: a = zeta * r = (prod_high << 16) + (prod_low as u16)
     let prod_high = mul_i16_keep_high_m256i(r, zeta_vec);
     let prod_low = mul_i16_keep_low_m256i(r, zeta_vec);
 
-    // t = (prod_low * QINV) mod 2^16
     let t = mul_i16_keep_low_m256i(prod_low, qinv);
 
-    // t * Q (as i32, split into i16 halves)
     let tq_low = mul_i16_keep_low_m256i(t, q);
     let tq_high = mul_i16_keep_high_m256i(t, q);
 
-    // Borrow detection: unsigned prod_low < tq_low ?
-    // Flip sign bit (XOR 0x8000) to convert unsigned comparison to signed.
     let borrow = cmp_gt_mask_i16_m256i(tq_low ^ flip, prod_low ^ flip);
-    // borrow is 0xFFFF where borrow=1, 0x0000 where borrow=0.
-    // Subtracting 0xFFFF wraps to +1 in i16 arithmetic.
 
-    // High half: prod_high - tq_high - borrow
-    // Result = (a - t*Q) >> 16
     sub_i16_m256i(sub_i16_m256i(prod_high, tq_high), borrow)
 }
 
@@ -62,7 +53,6 @@ pub(crate) fn ntt(r: &mut [i16; N]) {
     let mut k = 1usize;
     let mut len = 128;
 
-    // AVX2 layers: len = 128, 64, 32, 16
     while len >= 16 {
         let mut start = 0;
         while start < N {
@@ -74,9 +64,7 @@ pub(crate) fn ntt(r: &mut [i16; N]) {
                 let v0 = load_m256i(&r[j..]);
                 let v1 = load_m256i(&r[j + len..]);
 
-                // t = montgomery(zeta * v1)
                 let t = montgomery_mul_avx2(v1, zeta);
-                // butterfly: v0' = v0 + t, v1' = v0 - t
                 let new_v0 = add_i16_m256i(v0, t);
                 let new_v1 = sub_i16_m256i(v0, t);
 
@@ -85,24 +73,21 @@ pub(crate) fn ntt(r: &mut [i16; N]) {
                 j += 16;
             }
 
-            // Tail (len < 16 after final AVX2 layer — won't trigger here)
             while j < start + len {
                 let t = montgomery_reduce(i32::from(zeta) * i32::from(r[j + len]));
                 r[j + len] = r[j].wrapping_sub(t);
                 r[j] = r[j].wrapping_add(t);
                 j += 1;
             }
-            start = j + len; // = start + 2*len
+            start = j + len;
         }
         len >>= 1;
     }
 
-    // Scalar tail layers (len = 8, 4, 2)
     if len > 0 {
         soft_ntt_layers(r, len, k);
     }
 
-    // Final Barrett reduction
     for coeff in r.iter_mut() {
         *coeff = barrett_reduce(*coeff);
     }
@@ -112,7 +97,6 @@ pub(crate) fn invntt(r: &mut [i16; N]) {
     let mut k = 127usize;
     let mut len = 2;
 
-    // Scalar layers first (len = 2, 4, 8)
     while len < 16 {
         let mut start = 0;
         while start < N {
@@ -132,7 +116,6 @@ pub(crate) fn invntt(r: &mut [i16; N]) {
         len <<= 1;
     }
 
-    // AVX2 layers: len = 16, 32, 64, 128
     while len <= 128 {
         let mut start = 0;
         while start < N {
@@ -144,13 +127,9 @@ pub(crate) fn invntt(r: &mut [i16; N]) {
                 let v0 = load_m256i(&r[j..]);
                 let v1 = load_m256i(&r[j + len..]);
 
-                // Inverse butterfly:
-                //   sum  = v0 + v1       (needs Barrett reduction)
-                //   new_v1 = v1 - v0     (multiply by zeta in Montgomery)
                 let sum = add_i16_m256i(v0, v1);
                 let new_v1 = montgomery_mul_avx2(sub_i16_m256i(v1, v0), zeta);
 
-                // Barrett-reduce sum element-by-element (scalar — correct & simple)
                 let mut sum_arr: [i16; 16] = sum.into();
                 for s in &mut sum_arr {
                     *s = barrett_reduce(*s);
@@ -162,7 +141,6 @@ pub(crate) fn invntt(r: &mut [i16; N]) {
                 j += 16;
             }
 
-            // Tail elements
             while j < start + len {
                 let t = r[j];
                 r[j] = barrett_reduce({
@@ -179,7 +157,6 @@ pub(crate) fn invntt(r: &mut [i16; N]) {
         len <<= 1;
     }
 
-    // Multiply by scale factor n_inv = 1441
     scale_invntt_avx2(r);
 }
 
@@ -199,9 +176,6 @@ fn scale_invntt_avx2(r: &mut [i16; N]) {
 }
 
 pub(crate) fn poly_basemul(r: &mut [i16; N], a: &[i16; N], b: &[i16; N]) {
-    // Basemul doesn't benefit from AVX2 without proper i16 shuffles — the
-    // per-group zetas require lane-specific multipliers that safe_arch can't
-    // express efficiently.  Use scalar for all groups.
     for i in 0..N / 4 {
         let zeta = i32::from(ZETAS[64 + i]);
         let neg_zeta = i32::from(-ZETAS[64 + i]);

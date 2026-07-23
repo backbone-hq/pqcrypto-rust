@@ -79,7 +79,6 @@ fn ntruplr653_rejects_invalid_lengths() {
         Error::InvalidCiphertextLength
     );
 
-    // SecretKey::from_bytes rejects wrong-length inputs
     assert!(ntruplr653::SecretKey::from_bytes(&[0u8; 1]).is_err());
     assert!(ntruplr653::SecretKey::from_bytes(&vec![0u8; 1124]).is_err());
     assert!(ntruplr653::SecretKey::from_bytes(&vec![0u8; 1126]).is_err());
@@ -117,7 +116,6 @@ fn ntruplr761_rejects_invalid_lengths() {
         Error::InvalidCiphertextLength
     );
 
-    // SecretKey::from_bytes rejects wrong-length inputs
     assert!(ntruplr761::SecretKey::from_bytes(&[0u8; 1]).is_err());
     assert!(ntruplr761::SecretKey::from_bytes(&vec![0u8; 1293]).is_err());
     assert!(ntruplr761::SecretKey::from_bytes(&vec![0u8; 1295]).is_err());

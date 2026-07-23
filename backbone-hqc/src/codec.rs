@@ -1,15 +1,19 @@
+//! Concatenated codec: Reed-Solomon outer + Reed-Muller inner.
+//!
+//! Encodes and decodes messages using a two-layer concatenated code scheme:
+//! RS systematic encoding followed by RM encoding (encode), and the reverse
+//! decode pipeline: RM decode → RS decode.
+
 use crate::params::Params;
 use crate::{reed_muller, reed_solomon};
 use alloc::vec;
 
-/// Encode a message using the concatenated code: RS encode → RM encode.
 pub(crate) fn encode<P: Params>(em: &mut [u64], m: &[u8]) {
     let mut tmp = vec![0u8; P::VEC_N1_SIZE_BYTES];
     reed_solomon::encode::<P>(&mut tmp, m);
     reed_muller::encode::<P>(em, &tmp);
 }
 
-/// Decode a received word using the concatenated code: RM decode → RS decode.
 pub(crate) fn decode<P: Params>(m: &mut [u8], em: &[u64]) {
     let mut tmp = vec![0u8; P::VEC_N1_SIZE_BYTES];
     reed_muller::decode::<P>(&mut tmp, em);

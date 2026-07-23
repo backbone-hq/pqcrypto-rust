@@ -1,15 +1,7 @@
 //! Streamlined NTRU Prime negative tests.
-//!
-//! Verifies decapsulation behavior for invalid inputs:
-//! - Wrong secret key (from a different keypair) returns a different shared secret
-//! - Corrupted ciphertext returns a different shared secret
-//! - Invalid-length ciphertext is rejected
-//! - Invalid-length secret key is rejected
 
 use backbone_sntrup::error::Error;
 use backbone_sntrup::{sntrup653, sntrup761, sntrup857};
-
-// ─── SNTRUP-653 ────────────────────────────────────────────────────────────
 
 #[test]
 fn sntrup653_negative_wrong_key() {
@@ -68,14 +60,11 @@ fn sntrup653_negative_invalid_sk_len() {
     assert!(sntrup653::SecretKey::from_bytes(&[]).is_err());
     assert!(sntrup653::SecretKey::from_bytes(&[0u8; 1]).is_err());
 
-    // A properly constructed key still works
     let (pk, sk) = sntrup653::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
     let enc = sntrup653::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
     let ss = sntrup653::decaps(&sk, &enc.ciphertext).expect("valid decaps");
     assert_eq!(enc.shared_secret, ss);
 }
-
-// ─── SNTRUP-761 ────────────────────────────────────────────────────────────
 
 #[test]
 fn sntrup761_negative_wrong_key() {
@@ -134,14 +123,11 @@ fn sntrup761_negative_invalid_sk_len() {
     assert!(sntrup761::SecretKey::from_bytes(&[]).is_err());
     assert!(sntrup761::SecretKey::from_bytes(&[0u8; 1]).is_err());
 
-    // A properly constructed key still works
     let (pk, sk) = sntrup761::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
     let enc = sntrup761::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
     let ss = sntrup761::decaps(&sk, &enc.ciphertext).expect("valid decaps");
     assert_eq!(enc.shared_secret, ss);
 }
-
-// ─── SNTRUP-857 ────────────────────────────────────────────────────────────
 
 #[test]
 fn sntrup857_negative_wrong_key() {
@@ -200,7 +186,6 @@ fn sntrup857_negative_invalid_sk_len() {
     assert!(sntrup857::SecretKey::from_bytes(&[]).is_err());
     assert!(sntrup857::SecretKey::from_bytes(&[0u8; 1]).is_err());
 
-    // A properly constructed key still works
     let (pk, sk) = sntrup857::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
     let enc = sntrup857::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
     let ss = sntrup857::decaps(&sk, &enc.ciphertext).expect("valid decaps");

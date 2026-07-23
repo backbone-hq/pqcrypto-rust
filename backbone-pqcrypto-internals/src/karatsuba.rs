@@ -19,9 +19,8 @@ use crate::secret::SecretVec;
 /// Below this size we fall back to schoolbook (quadratic but low constant).
 const KARATSUBA_THRESHOLD: usize = 32;
 
-/// Multiply two polynomials of degree `n-1` (i.e. `n` coefficients each).
 ///
-/// `o` must have **at least `2 * n`** elements and should be **zero-initialised**.
+/// `o` must have **at least `2 * n`** elements (zeroed automatically).
 /// On return `o[0 .. 2*n-1]` contains the full linear convolution
 /// (the product in the polynomial ring Z`[x]` before any ring reduction).
 ///
@@ -32,28 +31,22 @@ pub fn karatsuba_mul(o: &mut [i64], a: &[i64], b: &[i64], n: usize) {
         2 * n,
         o.len()
     );
-    // Zero the output buffer to remove caller obligation to pre-zero.
     o.fill(0);
     if n <= KARATSUBA_THRESHOLD {
         schoolbook(o, a, b, n);
         return;
     }
 
-    let n_lo = n.div_ceil(2); // ceil(n/2)  – lower part
-    let n_hi = n - n_lo; // floor(n/2) – upper part
+    let n_lo = n.div_ceil(2);
+    let n_hi = n - n_lo;
 
-    // ----- temporaries (SecretVec — zeroized on drop) -----
-    let mut z2 = SecretVec::<i64>::new(2 * n_hi); // a_hi × b_hi
-    let mut z1 = SecretVec::<i64>::new(2 * n_lo); // (a_lo + a_hi) × (b_lo + b_hi)
+    let mut z2 = SecretVec::<i64>::new(2 * n_hi);
+    let mut z1 = SecretVec::<i64>::new(2 * n_lo);
 
-    // z0 = a_lo × b_lo     (write directly into the output buffer)
     karatsuba_mul(o, a, b, n_lo);
 
-    // z2 = a_hi × b_hi
     karatsuba_mul(&mut z2, &a[n_lo..], &b[n_lo..], n_hi);
 
-    // sum_a = a_lo + a_hi   (padded to n_lo elements)
-    // sum_b = b_lo + b_hi
     let mut sum_a = SecretVec::<i64>::new(n_lo);
     let mut sum_b = SecretVec::<i64>::new(n_lo);
     for i in 0..n_hi {
@@ -61,15 +54,12 @@ pub fn karatsuba_mul(o: &mut [i64], a: &[i64], b: &[i64], n: usize) {
         sum_b[i] = b[i] + b[n_lo + i];
     }
     if n_hi < n_lo {
-        // a[n_hi] belongs to a_lo but has no a_hi counterpart
         sum_a[n_hi] = a[n_hi];
         sum_b[n_hi] = b[n_hi];
     }
 
-    // z1 = (a_lo + a_hi) × (b_lo + b_hi)
     karatsuba_mul(&mut z1, &sum_a, &sum_b, n_lo);
 
-    // z1 = z1 - z0 - z2   (Karatsuba middle term)
     for i in 0..(2 * n_lo) {
         z1[i] -= o[i];
     }
@@ -77,7 +67,6 @@ pub fn karatsuba_mul(o: &mut [i64], a: &[i64], b: &[i64], n: usize) {
         z1[i] -= z2[i];
     }
 
-    // Combine:  z0 + z1·x^{n_lo} + z2·x^{2·n_lo}
     for i in 0..(2 * n_lo) {
         o[n_lo + i] += z1[i];
     }

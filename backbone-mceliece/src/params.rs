@@ -4,8 +4,6 @@
 //! associated constants.  Helper functions (`gfmask`, `cond_bytes`, …) are
 //! `const fn` so they can appear in associated-constant positions.
 
-// ── Helper functions (const) ──────────────────────────────────────────────
-
 /// Field mask `(1 << gfbits) - 1` for GF(2^gfbits).
 #[inline]
 pub(crate) const fn gfmask(gfbits: usize) -> u16 {
@@ -30,8 +28,6 @@ pub(crate) const fn synd_bytes(pk_nrows: usize) -> usize {
     pk_nrows.div_ceil(8)
 }
 
-// ── Params trait ──────────────────────────────────────────────────────────
-
 /// Per-variant parameter set.
 ///
 /// Marker types implementing this trait carry compile-time constants that
@@ -45,8 +41,6 @@ pub trait Params {
 
     /// Error-correction capacity (number of errors the code can correct).
     const SYS_T: usize;
-
-    // Derived constants (computed from the three base values above).
 
     /// Number of rows in the public-key generator matrix.
     const PK_NROWS: usize = Self::SYS_T * Self::GFBITS;
@@ -69,8 +63,6 @@ pub trait Params {
     /// Field mask for GF(2^GFBITS).
     const GFMASK: u16 = gfmask(Self::GFBITS);
 
-    // Public-key / secret-key / ciphertext sizes (from NIST spec).
-
     /// Public key size in bytes.
     const PK_BYTES: usize;
 
@@ -83,8 +75,6 @@ pub trait Params {
     /// Shared secret size in bytes.
     const SS_BYTES: usize = 32;
 }
-
-// ── Variant definitions ───────────────────────────────────────────────────
 
 macro_rules! define_params {
     ($(#[$attr:meta])* $name:ident, $gfbits:expr, $n:expr, $t:expr, $pk:expr, $sk:expr, $ct:expr) => {
@@ -203,8 +193,6 @@ define_params!(
     208
 );
 
-// ── Consistency checks (test-only) ────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,7 +212,6 @@ mod tests {
         assert_eq!(T::SK_BYTES, sk_bytes);
         assert_eq!(T::CT_BYTES, ct_bytes);
 
-        // Derived constants
         assert_eq!(T::PK_NROWS, sys_t * gfbits);
         assert_eq!(T::PK_NCOLS, sys_n - sys_t * gfbits);
         assert_eq!(T::IRR_BYTES, sys_t * 2);

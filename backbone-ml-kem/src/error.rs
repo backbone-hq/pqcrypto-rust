@@ -19,8 +19,6 @@ pub enum Error {
     InvalidCiphertextLength,
     /// RNG failure (system randomness unavailable).
     RngFailure,
-    /// Decapsulation failed (re-encryption mismatch).
-    DecapsulationFailed,
 }
 
 impl fmt::Display for Error {
@@ -32,7 +30,6 @@ impl fmt::Display for Error {
             Error::InvalidSecretKey => write!(f, "invalid secret key"),
             Error::InvalidCiphertextLength => write!(f, "invalid ciphertext length"),
             Error::RngFailure => write!(f, "random number generation failed"),
-            Error::DecapsulationFailed => write!(f, "decapsulation failed"),
         }
     }
 }
@@ -48,5 +45,4 @@ impl_pqc_error! {
     InvalidSecretKey => PqcErrorKind::InvalidSecretKey,
     InvalidCiphertextLength => PqcErrorKind::InvalidCiphertextLength,
     RngFailure => PqcErrorKind::RngFailure,
-    DecapsulationFailed => PqcErrorKind::DecapsulationFailed,
 }

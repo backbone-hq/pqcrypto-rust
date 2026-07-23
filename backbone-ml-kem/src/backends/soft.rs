@@ -87,7 +87,7 @@ pub(crate) fn poly_basemul(r: &mut [i16; N], a: &[i16; N], b: &[i16; N]) {
         let b2 = i32::from(b[4 * i + 2]);
         let b3 = i32::from(b[4 * i + 3]);
 
-        let t = montgomery_reduce(a1 * b1); // returns i16
+        let t = montgomery_reduce(a1 * b1);
         let t = montgomery_reduce(i32::from(t) * zeta);
         let t = t.wrapping_add(montgomery_reduce(a0 * b0));
         r[4 * i] = t;

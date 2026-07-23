@@ -1,8 +1,4 @@
 //! Known-answer tests for SNTRUP Rounded encoding.
-//!
-//! Each test constructs an arithmetic polynomial matching a Python reference,
-//! encodes it via encode_rounded(), and asserts the byte output matches the
-//! expected vector. All three parameter sets (653, 761, 857) are covered.
 
 #[cfg(test)]
 mod sntrup653_kat {
@@ -11,11 +7,9 @@ mod sntrup653_kat {
 
     const P: usize = 653;
     const Q: i16 = 4621;
-    const QS: i16 = 4621 / 2; // 2310
+    const QS: i16 = 4621 / 2;
 
     fn make_test_poly() -> [i16; P] {
-        // Arithmetic polynomial matching Python reference (integer-only):
-        //   raw = ((i * 7 + seed) * 3) % (Q - 1),  coeff = raw - QS
         const SEED: i32 = 123;
         let mut coeffs = [0i16; P];
         for i in 0..P {
@@ -62,11 +56,9 @@ mod sntrup761_kat {
 
     const P: usize = 761;
     const Q: i16 = 4591;
-    const QS: i16 = 4591 / 2; // 2295
+    const QS: i16 = 4591 / 2;
 
     fn make_test_poly() -> [i16; P] {
-        // Arithmetic polynomial matching Python reference (integer-only):
-        //   raw = ((i * 7 + seed) * 3) % (Q - 1),  coeff = raw - QS
         const SEED: i32 = 456;
         let mut coeffs = [0i16; P];
         for i in 0..P {
@@ -113,11 +105,9 @@ mod sntrup857_kat {
 
     const P: usize = 857;
     const Q: i16 = 5167;
-    const QS: i16 = 5167 / 2; // 2583
+    const QS: i16 = 5167 / 2;
 
     fn make_test_poly() -> [i16; P] {
-        // Arithmetic polynomial matching Python reference (integer-only):
-        //   raw = ((i * 7 + seed) * 3) % (Q - 1),  coeff = raw - QS
         const SEED: i32 = 789;
         let mut coeffs = [0i16; P];
         for i in 0..P {

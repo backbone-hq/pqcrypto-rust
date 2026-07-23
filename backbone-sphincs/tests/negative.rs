@@ -1,11 +1,4 @@
 //! SPHINCS+ signature negative tests.
-//!
-//! Verifies that verification correctly rejects invalid inputs:
-//! - Corrupted message
-//! - Wrong public key
-//! - Corrupted signature bytes
-//! - Truncated signature (boundary case: empty sig, half-length sig)
-//! - Empty message roundtrip (positive sanity check)
 
 use backbone_sphincs::params::Params;
 use backbone_sphincs::params::{
@@ -32,7 +25,6 @@ macro_rules! negative_tests {
             let seed = vec![0x42u8; <$variant>::SEED_BYTES];
             let msg = b"hello sphincs negative test";
 
-            // --- corrupted message ---
             let (pk, sk) = $module::keygen(&seed).unwrap();
             let sig = $module::sign(&sk, msg).unwrap();
             assert!($module::verify(&pk, msg, &sig));
@@ -43,7 +35,6 @@ macro_rules! negative_tests {
                 "verify should reject corrupted message"
             );
 
-            // --- wrong public key ---
             let seed_b = vec![0xabu8; <$variant>::SEED_BYTES];
             let (pk_b, _) = $module::keygen(&seed_b).unwrap();
             assert!(
@@ -51,7 +42,6 @@ macro_rules! negative_tests {
                 "verify should reject wrong public key"
             );
 
-            // --- corrupted signature ---
             let (pk2, sk2) = $module::keygen(&seed).unwrap();
             let sig2 = $module::sign(&sk2, msg).unwrap();
             assert!($module::verify(&pk2, msg, &sig2));
@@ -65,7 +55,6 @@ macro_rules! negative_tests {
                 );
             }
 
-            // --- truncated signature ---
             assert!($module::verify(&pk2, msg, &sig2));
             let empty_sig = $module::Signature { sig: vec![] };
             assert!(
@@ -79,7 +68,6 @@ macro_rules! negative_tests {
                 "verify should reject truncated sig"
             );
 
-            // --- empty message roundtrip ---
             let (pk3, sk3) = $module::keygen(&seed).unwrap();
             let sig3 = $module::sign(&sk3, b"").unwrap();
             assert!(
@@ -90,7 +78,6 @@ macro_rules! negative_tests {
     };
 }
 
-// SHAKE variants
 negative_tests!(shake128s_negative, shake128s, Shake128s);
 negative_tests!(shake128f_negative, shake128f, Shake128f);
 negative_tests!(shake192s_negative, shake192s, Shake192s);
@@ -98,7 +85,6 @@ negative_tests!(shake192f_negative, shake192f, Shake192f);
 negative_tests!(shake256s_negative, shake256s, Shake256s);
 negative_tests!(shake256f_negative, shake256f, Shake256f);
 
-// SHA-2 variants
 negative_tests!(sha2_128s_negative, sha2_128s, Sha2_128s);
 negative_tests!(sha2_128f_negative, sha2_128f, Sha2_128f);
 negative_tests!(sha2_192s_negative, sha2_192s, Sha2_192s);

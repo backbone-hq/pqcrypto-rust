@@ -1,9 +1,3 @@
-// ── Classic McEliece decoder (synd → bm → root → verify) ────────────
-//
-// Port of the pqclean "clean" reference decoder.  Uses direct GF(2^m)
-// polynomial arithmetic.  Accepts GFBITS as const generic; all array
-// sizes are runtime parameters (to avoid unstable generic_const_exprs).
-
 use crate::gf;
 use alloc::vec::Vec;
 
@@ -70,13 +64,11 @@ pub(crate) fn bm<const GFBITS: usize>(out: &mut [u16], s: &[u16], sys_t: usize) 
             d ^= gf::gf_mul::<GFBITS>(c_poly[i], s[n_iter - i]);
         }
 
-        // mne = 0xFFFF if d != 0, else 0 (using u16 wrap arithmetic, matching c_poly ref)
         let mut mne: u16 = d;
         mne = mne.wrapping_sub(1);
         mne >>= 15;
         mne = mne.wrapping_sub(1);
 
-        // mle = 0xFFFF if n_iter >= 2*l_len, else 0
         let mut mle: u16 = u16::try_from(n_iter).expect("n_iter fits in u16");
         mle = mle.wrapping_sub(2 * l_len);
         mle >>= 15;
@@ -100,14 +92,12 @@ pub(crate) fn bm<const GFBITS: usize>(out: &mut [u16], s: &[u16], sys_t: usize) 
 
         b = (b & !mle) | (d & mle);
 
-        // shift b_poly
         for i in (1..=sys_t).rev() {
             b_poly[i] = b_poly[i - 1];
         }
         b_poly[0] = 0;
     }
 
-    // Reverse output: out[i] = c_poly[sys_t - i]
     for i in 0..=sys_t {
         out[i] = c_poly[sys_t - i];
     }
@@ -129,7 +119,6 @@ pub(crate) fn root<const GFBITS: usize>(
     }
 }
 
-/// Decoder core.
 ///
 /// Given Goppa polynomial `f`, support `roots`, and ciphertext `c`,
 /// decode and verify the error vector.
@@ -147,22 +136,17 @@ pub(crate) fn decrypt_with_support<const GFBITS: usize>(
     let mut locator = alloc::vec![0u16; sys_t + 1];
     let mut images = alloc::vec![0u16; sys_n];
 
-    // Zero-pad ciphertext from SYND_BYTES to sys_n/8 bytes (clean ref semantics)
     let ct_bytes = c.len();
     let nbytes = sys_n / 8;
     let mut r = alloc::vec![0u8; nbytes];
     r[..ct_bytes.min(nbytes)].copy_from_slice(&c[..ct_bytes.min(nbytes)]);
 
-    // Syndrome from ciphertext
     synd::<GFBITS>(&mut s, f, roots, &r, sys_n, sys_t);
 
-    // Error locator via BM
     bm::<GFBITS>(&mut locator, &s, sys_t);
 
-    // Evaluate locator at all support points
     root::<GFBITS>(&mut images, &locator, roots, sys_n, sys_t);
 
-    // Construct error vector from zero positions
     let nbytes = sys_n / 8;
     let mut e = alloc::vec![0u8; nbytes];
     let mut w: u16 = 0;
@@ -172,15 +156,12 @@ pub(crate) fn decrypt_with_support<const GFBITS: usize>(
         w = w.wrapping_add(t);
     }
 
-    // Re-encrypt to verify
     synd::<GFBITS>(&mut s_cmp, f, roots, &e, sys_n, sys_t);
 
-    // Check: weight must be sys_t, syndromes must match
     let mut check: u16 = w ^ u16::try_from(sys_t).expect("sys_t ≤ 65535");
     for j in 0..2 * sys_t {
         check |= s[j] ^ s_cmp[j];
     }
-    // If check == 0 → success (return 1); failure → 0
     let valid = (check.wrapping_sub(1) >> 15) as u8;
 
     (e, valid)

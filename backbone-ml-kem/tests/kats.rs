@@ -42,7 +42,6 @@ fn test_512_deterministic() {
     let (pk2, sk2) = mlkem512::keypair_from_seed(&seed).unwrap();
     assert_eq!(pk1.pk, pk2.pk, "ek not deterministic");
     assert_eq!(sk1.as_ref(), sk2.as_ref(), "dk not deterministic");
-    // Verify pk is not all zeros
     assert!(pk1.pk.iter().any(|&b| b != 0), "pk is all zeros");
 }
 

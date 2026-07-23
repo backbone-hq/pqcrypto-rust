@@ -39,7 +39,6 @@ const fn tree_encoded_bytes(p: usize, m_val: u64) -> usize {
         return 0;
     }
     const LIMIT: u64 = 16384;
-    // Max ring dimension across all variants is 857.
     const MAX_P: usize = 900;
 
     let mut mods = [0u64; MAX_P];
@@ -74,7 +73,6 @@ const fn tree_encoded_bytes(p: usize, m_val: u64) -> usize {
         len = write_idx;
     }
 
-    // Base case: single remaining entry
     let mut m = if len > 0 { mods[0] } else { m_val };
     while m > 1 {
         total += 1;
@@ -91,14 +89,12 @@ pub(crate) const fn qshift(q: i16) -> i32 {
 /// First Barrett multiplier: floor(2^20 / Q) — matches reference.
 pub(crate) const fn barrett_m1(q: i16) -> i32 {
     let q_u32 = u16::from_ne_bytes(q.to_ne_bytes()) as u32;
-    // Result ≤ 2^20 = 1048576, well within i32 range
     i32::from_ne_bytes(((1u32 << 20) / q_u32).to_ne_bytes())
 }
 
 /// Second Barrett multiplier: floor(2^28 / Q) — matches reference.
 pub(crate) const fn barrett_m2(q: i16) -> i32 {
     let q_u32 = u16::from_ne_bytes(q.to_ne_bytes()) as u32;
-    // Result ≤ 2^28 = 268435456, well within i32 range
     i32::from_ne_bytes(((1u32 << 28) / q_u32).to_ne_bytes())
 }
 
@@ -172,13 +168,10 @@ impl<const P: usize, const Q: i16> Rq<P, Q> {
         Ok(r)
     }
 
-    // ---- Rounded encoding (binary-tree Encode, non-round1) ----
-
     pub(crate) fn encode_rounded(&self) -> vec::Vec<u8> {
         let qs = qshift(Q);
         let m_val = (u64::from(u16::from_ne_bytes(Q.to_ne_bytes())) - 1) / 3 + 1;
 
-        // Convert coefficients to values in [0, m_val)
         let values: vec::Vec<u64> = (0..P)
             .map(|i| {
                 u64::try_from(((i32::from(self.0[i]) + qs) * ROUND_MULT) >> 15)
@@ -189,7 +182,6 @@ impl<const P: usize, const Q: i16> Rq<P, Q> {
         backbone_pqcrypto_internals::tree_encode::rounded_encode(values, alloc::vec![m_val; P])
     }
 
-    /// SAFETY: decode_rounded uses lossy i64→i32 casts matching the reference implementation.
     pub(crate) fn decode_rounded(input: &[u8]) -> Result<Self, &'static str> {
         let qs = qshift(Q);
         let q = i32::from(Q);
@@ -204,7 +196,6 @@ impl<const P: usize, const Q: i16> Rq<P, Q> {
 
         let mut r = Rq(SecretArray::new());
         for i in 0..P {
-            // values[i] is in [0, m_val).  Convert back to coefficient in [-qs, qs].
             let coeff = i32::try_from(values[i]).expect("values[i] fits in i32") * 3;
             r.0[i] = modq_freeze::<Q>(coeff + q - qs);
         }
@@ -327,8 +318,6 @@ impl<const P: usize> R3<P> {
         ct_count_nonzero(self.0.as_ref(), &0i8)
     }
 
-    // ---- Encoding/Decoding (2 bits per coeff) ----
-
     pub(crate) fn encode(&self, out: &mut [u8]) -> Result<(), &'static str> {
         let enc = r3_encoded_bytes(P);
         if out.len() < enc {
@@ -375,7 +364,6 @@ mod tests {
         const Q: i16 = 4591;
         let qs = qshift(Q);
         let mut poly = Rq::<P, Q>(SecretArray::new());
-        // Generate deterministic coefficients
         for i in 0..P {
             poly.0[i] = ((i as i32 * 12345 + 6789) % i32::from(Q) - qs) as i16;
         }
@@ -429,7 +417,6 @@ mod tests {
     #[test]
     fn test_modq_freeze_range() {
         const Q: i16 = 4591;
-        // Test with values around 0
         for val in [-5000i32, -4591, -2295, 0, 2295, 4590, 5000] {
             let frozen = modq_freeze::<Q>(val);
             let frozen_i32 = i32::from(frozen);

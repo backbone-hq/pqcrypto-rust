@@ -48,7 +48,6 @@ impl Poly {
         (a1, a0)
     }
 
-    /// Compute corrected high bits from value and hint.
     /// Matches C reference: decompose, then adjust a₁ by ±1 with wrap at [0, max].
     pub(crate) fn use_hint(r: i32, hint: i32, gamma2: i32) -> i32 {
         let (a1, a0) = Self::decompose(r, gamma2 * 2);
@@ -86,7 +85,7 @@ impl Poly {
             // CT absolute value: (x ^ (x >> 31)) - (x >> 31) = |x|
             let abs_c = (c ^ (c >> 31)).wrapping_sub(c >> 31);
             // CT centered reduction: if abs_c > Q/2 then use Q - abs_c
-            let mask = (Q.wrapping_sub(abs_c << 1)) >> 31; // -1 when abs_c > Q/2
+            let mask = (Q.wrapping_sub(abs_c << 1)) >> 31;
             let centered = (mask & (Q - abs_c)) | (!mask & abs_c);
             // CT max: update max_val = max(max_val, centered)
             let update_mask = (max_val.wrapping_sub(centered)) >> 31;

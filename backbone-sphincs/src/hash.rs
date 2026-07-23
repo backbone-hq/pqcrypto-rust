@@ -153,8 +153,6 @@ macro_rules! impl_shake_hash {
 
 impl_shake_hash!(Shake128s, Shake128f, Shake192s, Shake192f, Shake256s, Shake256f,);
 
-// ─── SHA-2 helpers (MGF1) ───
-
 fn mgf1_256(out: &mut [u8], seed: &[u8]) {
     let mut counter = 0u32;
     let mut offset = 0;
@@ -184,8 +182,6 @@ fn mgf1_512(out: &mut [u8], seed: &[u8]) {
         counter += 1;
     }
 }
-
-// ─── SHA-2 (SHA-256) — 128s, 128f ───
 
 macro_rules! impl_sha2_256_hash {
     ($($variant:ident),+ $(,)?) => {
@@ -313,8 +309,6 @@ macro_rules! impl_sha2_256_hash {
         })+
     };
 }
-
-// ─── SHA-2 (SHA-512) — 192s, 192f, 256s, 256f ───
 
 macro_rules! impl_sha2_512_hash {
     ($($variant:ident),+ $(,)?) => {

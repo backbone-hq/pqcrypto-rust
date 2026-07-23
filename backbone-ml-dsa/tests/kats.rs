@@ -49,8 +49,6 @@ fn test_ml_dsa_44_roundtrip_basic() {
     assert!(valid, "Basic roundtrip should pass");
 }
 
-// ─── Keygen KATs ───────────────────────────────────────────────────────────
-
 #[test]
 fn test_ml_dsa_44_keygen_kat() {
     let entries = get_kat_entries(&kat_path("mldsa44-pure"));
@@ -83,8 +81,6 @@ fn test_ml_dsa_87_keygen_kat() {
         assert_eq!(sk.as_ref(), entry.sk, "KAT entry {i}: sk mismatch");
     }
 }
-
-// ─── Sign KATs ─────────────────────────────────────────────────────────────
 
 #[test]
 fn test_ml_dsa_44_sign_kat() {
@@ -128,8 +124,6 @@ fn test_ml_dsa_87_sign_kat() {
     }
 }
 
-// ─── Sign-output byte-for-byte KATs ────────────────────────────────────────
-
 #[test]
 fn test_ml_dsa_44_sign_output_kat() {
     let entries = get_kat_entries(&kat_path("mldsa44-pure"));
@@ -168,8 +162,6 @@ fn test_ml_dsa_87_sign_output_kat() {
         assert_eq!(sig.sig, sig_expected, "KAT entry {i}: sign output mismatch");
     }
 }
-
-// ─── Verify KATs ───────────────────────────────────────────────────────────
 
 #[test]
 fn test_ml_dsa_44_verify_kat() {

@@ -1,11 +1,3 @@
-// ── GF(2^m) arithmetic for Classic McEliece ──────────────────────────
-//
-// Implements field operations over GF(2^GFBITS) using the same polynomial
-// reduction as the pqclean "clean" reference implementation.
-//
-// GFBITS=12: field polynomial x^12 + x^3 + 1
-// GFBITS=13: field polynomial x^13 + x^10 + x^9 + x^6 + 1
-
 /// Returns 0xFFFF if `a == 0`; 0 otherwise (constant-time mask).
 #[inline]
 pub(crate) fn gf_iszero(a: u16) -> u16 {
@@ -43,9 +35,7 @@ fn gf_mul_12(a: u16, b: u16) -> u16 {
     let q = m128i::from([i64::from(b), 0i64]);
     let r: m128i = mul_i64_carryless_m128i::<0>(p, q);
     let res: [i64; 2] = r.into();
-    // Carryless product of two 12-bit values is at most 24 bits wide.
     let mut tmp = u32::try_from(res[0]).expect("PCLMULQDQ result fits in 32 bits");
-    // Reduction modulo x^12 + x^3 + 1
     let mut t = tmp & 0x7FC000;
     tmp ^= t >> 9;
     tmp ^= t >> 12;
@@ -87,9 +77,7 @@ fn gf_mul_13(a: u16, b: u16) -> u16 {
     let q = m128i::from([i64::from(b), 0i64]);
     let r: m128i = mul_i64_carryless_m128i::<0>(p, q);
     let res: [i64; 2] = r.into();
-    // Carryless product of two 13-bit values is at most 26 bits wide.
     let mut tmp = u64::try_from(res[0]).expect("PCLMULQDQ result fits in 64 bits");
-    // Reduction modulo x^13 + x^4 + x^3 + x + 1
     let mut t = tmp & 0x1FF0000;
     tmp ^= (t >> 9) ^ (t >> 10) ^ (t >> 12) ^ (t >> 13);
     t = tmp & 0x000E000;
@@ -199,7 +187,6 @@ pub(crate) fn gf_inv<const GFBITS: usize>(a: u16) -> u16 {
             gf_sq_12(out)
         }
         13 => {
-            // GFBITS=12 chain up to a^2047
             let out = gf_sq_13(a);
             let tmp_11 = gf_mul_13(out, a);
             let out = gf_sq_13(tmp_11);
@@ -214,11 +201,10 @@ pub(crate) fn gf_inv<const GFBITS: usize>(a: u16) -> u16 {
             let out = gf_sq_13(out);
             let out = gf_mul_13(out, tmp_11);
             let out = gf_sq_13(out);
-            let out = gf_mul_13(out, a); // a^2047 = a^(2^11 - 1)
-                                         // Extend for GFBITS=13: square + mul by a to reach a^4095, then square
-            let out = gf_sq_13(out); // a^4094
-            let out = gf_mul_13(out, a); // a^4095 = a^(2^12 - 1)
-            gf_sq_13(out) // a^8190 = a^(2^13 - 2) = a^(-1)
+            let out = gf_mul_13(out, a);
+            let out = gf_sq_13(out);
+            let out = gf_mul_13(out, a);
+            gf_sq_13(out)
         }
         _ => {
             // SAFETY: GFBITS is monomorphized to 12 or 13 by the variant parameter.
@@ -227,7 +213,6 @@ pub(crate) fn gf_inv<const GFBITS: usize>(a: u16) -> u16 {
     }
 }
 
-/// Compute `num / den` in GF(2^GFBITS).
 #[inline]
 pub(crate) fn gf_frac<const GFBITS: usize>(den: u16, num: u16) -> u16 {
     gf_mul::<GFBITS>(gf_inv::<GFBITS>(den), num)

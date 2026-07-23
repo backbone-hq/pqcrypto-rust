@@ -12,7 +12,6 @@ macro_rules! define_variant {
         #[cfg(feature = "zeroize")]
         use zeroize::Zeroize;
 
-        // Derive local consts from Params trait
         const _P: usize = <$params as $crate::params::Params>::P;
         const _Q: i16 = <$params as $crate::params::Params>::Q;
         const _W: usize = <$params as $crate::params::Params>::W;
@@ -24,11 +23,9 @@ macro_rules! define_variant {
         const _TAU2: i32 = <$params as $crate::params::Params>::TAU2;
         const _TAU3: i32 = <$params as $crate::params::Params>::TAU3;
 
-        // PublicKey struct
         #[doc = concat!($doc_variant, " public key.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct PublicKey {
-            /// The raw public key bytes.
             pub pk: Vec<u8>,
         }
 
@@ -42,7 +39,6 @@ macro_rules! define_variant {
             }
         }
 
-        // SecretKey struct
         #[doc = concat!($doc_variant, " secret key.")]
         #[cfg_attr(feature = "zeroize", derive(Zeroize))]
         #[cfg_attr(feature = "zeroize", zeroize(drop))]
@@ -61,9 +57,7 @@ macro_rules! define_variant {
         /// Result of a successful encapsulation.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Encapsulation {
-            /// The shared secret (32 bytes).
             pub shared_secret: [u8; $ss_size],
-            /// The ciphertext.
             pub ciphertext: Vec<u8>,
         }
 
@@ -101,7 +95,6 @@ macro_rules! define_variant {
             $crate::kem::decaps::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(sk.as_ref(), ct, _W)
         }
 
-        // AsRef impls
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] { &self.pk }
         }
@@ -118,13 +111,11 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            /// Return the raw secret key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.sk
             }
         }
 
-        // Inline tests
         #[cfg(test)]
         mod tests {
             use super::*;

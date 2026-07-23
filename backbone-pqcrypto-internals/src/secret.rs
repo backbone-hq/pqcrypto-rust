@@ -33,7 +33,6 @@ impl<T: Zeroize> Drop for SecretVec<T> {
 }
 
 impl<T: Zeroize> SecretVec<T> {
-    /// Create a new zeroed buffer of the given length.
     #[must_use]
     pub fn new(len: usize) -> Self
     where
@@ -42,13 +41,11 @@ impl<T: Zeroize> SecretVec<T> {
         SecretVec(vec![T::default(); len].into_boxed_slice())
     }
 
-    /// Return the length of the buffer.
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Return `true` if the buffer is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -100,13 +97,11 @@ impl<T: Zeroize, const N: usize> Drop for SecretArray<T, N> {
 }
 
 impl<T: Zeroize + Clone + Default, const N: usize> SecretArray<T, N> {
-    /// Create a new zeroed array.
     #[must_use]
     pub fn new() -> Self {
         SecretArray(array_from_default::<T, N>())
     }
 
-    /// Create from an existing array (takes ownership).
     #[must_use]
     pub fn from_array(arr: [T; N]) -> Self {
         SecretArray(arr)
@@ -116,8 +111,8 @@ impl<T: Zeroize + Clone + Default, const N: usize> SecretArray<T, N> {
 impl<T: Zeroize, const N: usize> SecretArray<T, N> {
     /// Consume and return the inner array without zeroizing.
     ///
-    /// Uses `core::mem::replace` with a zeroed default, then `forget`
-    /// to prevent the outer Drop from running on the zeroed copy.
+    /// Uses `core::mem::replace` with a zeroed default, leaving the
+    /// original (now-zeroed) array for Drop to handle harmlessly.
     /// Only available when `T: Default`.
     #[must_use]
     pub fn into_inner(mut self) -> [T; N]
@@ -232,7 +227,6 @@ mod tests {
     #[test]
     fn test_debug_secretvec_redacts() {
         let mut s = SecretVec::new(8);
-        // Fill with distinctive bytes to catch leaks
         #[allow(clippy::cast_possible_truncation)]
         for (i, b) in s.iter_mut().enumerate() {
             *b = 0xABu8.wrapping_add(i as u8);
@@ -240,7 +234,7 @@ mod tests {
         let d = format!("{:?}", s);
         assert!(d.starts_with("SecretVec"), "type name should appear");
         assert!(d.contains("len: 8"), "metadata should appear");
-        assert!(!d.contains("171"), "no byte values in output"); // 0xAB = 171
+        assert!(!d.contains("171"), "no byte values in output");
         assert!(d.contains(".."), "redaction indicator should appear");
     }
 
@@ -253,10 +247,8 @@ mod tests {
         }
         let d = format!("{:?}", a);
         assert!(d.starts_with("SecretArray"), "type name should appear");
-        assert!(!d.contains("205"), "no byte values in output"); // 0xCD = 205
+        assert!(!d.contains("205"), "no byte values in output");
     }
-
-    // ── SecretVec fixed-length guarantees ──
 
     #[test]
     fn test_secretvec_is_fixed_length() {
@@ -288,11 +280,8 @@ mod tests {
         let mut sv = SecretVec::<u8>::new(8);
         sv[0] = 42;
         sv.zeroize();
-        // After zeroize, all bytes should be 0
         assert!(sv.iter().all(|&b| b == 0));
     }
-
-    // ── SecretArray constant-time equality ──
 
     #[test]
     fn test_secretarray_ct_eq_equal() {
@@ -313,7 +302,7 @@ mod tests {
     fn test_secretarray_ct_eq_no_short_circuit() {
         let a = SecretArray::<u8, 8>::new();
         let mut b = SecretArray::<u8, 8>::new();
-        b[7] = 1; // differs at last byte only
+        b[7] = 1;
         assert_eq!(a.ct_eq(&b).unwrap_u8(), 0);
     }
 
@@ -322,7 +311,7 @@ mod tests {
         let mut a = SecretArray::<u8, 16>::new();
         let mut b = SecretArray::<u8, 16>::new();
         for i in 0..16 {
-            // SAFETY: i < 16, well within u8 range
+            // i < 16, well within u8 range
             a[i] = u8::try_from(i).unwrap();
             b[i] = u8::try_from(i).unwrap();
         }
@@ -336,8 +325,6 @@ mod tests {
         let a = SecretArray::<u8, 8>::new();
         let mut b = SecretArray::<u8, 8>::new();
         b[7] = 1;
-        // PartialEq uses == on the inner array which short-circuits.
-        // ct_eq does NOT short-circuit (both must scan all elements).
         assert_ne!(a, b);
     }
 }

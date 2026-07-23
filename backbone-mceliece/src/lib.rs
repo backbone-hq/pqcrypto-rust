@@ -1,8 +1,5 @@
 //! Pure Rust implementations of McEliece KEM variants
 #![no_std]
-// These casts are structurally necessary for ported reference implementations:
-// Montgomery reduction, bit-packing, and modulus operations are mathematically
-// proven to stay within range. try_from would add unwrap overhead in hot loops.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -24,7 +21,6 @@ pub(crate) mod fft_tables;
 pub mod params;
 pub(crate) mod sort;
 pub(crate) mod vec_ops;
-// Variant files — internal implementation details
 
 /// McEliece 348864 parameter set (12-bit field, 3488-bit code, 64 errors).
 pub mod mceliece348864;

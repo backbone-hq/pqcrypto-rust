@@ -1,12 +1,4 @@
 //! ML-KEM (FIPS 203) negative tests.
-//!
-//! Verifies that decapsulation rejects invalid inputs by producing a
-//! different shared secret (implicit rejection per FIPS 203):
-//! - Wrong private key (from a different keypair)
-//! - Corrupted ciphertext
-//! - Zeroed ciphertext
-//!
-//! Also verifies that basic sanity checks pass (valid roundtrip works).
 
 use backbone_ml_kem::error::Error;
 use backbone_ml_kem::mlkem1024;
@@ -44,19 +36,15 @@ fn sha3_512_64(input: &[u8]) -> [u8; 64] {
     out
 }
 
-// ─── ML-KEM-512 ───
-
 #[test]
 fn mlkem512_negative_wrong_key() {
     let (pk_a, sk_a) = mlkem512::keypair_from_seed(&[0x01u8; 32]).unwrap();
     let msg = [0xabu8; 32];
     let enc = mlkem512::encaps_deterministic(&pk_a, &msg).unwrap();
 
-    // Verify baseline roundtrip
     let ss_good = mlkem512::decaps(&sk_a, &enc.ciphertext).unwrap();
     assert_eq!(enc.shared_secret, ss_good, "baseline roundtrip failed");
 
-    // Generate a DIFFERENT keypair
     let (_pk_b, sk_b) = mlkem512::keypair_from_seed(&[0x42u8; 32]).unwrap();
     assert_ne!(
         sk_a.as_ref(),
@@ -64,7 +52,6 @@ fn mlkem512_negative_wrong_key() {
         "two keygens produced the same sk"
     );
 
-    // Decaps with wrong key should produce DIFFERENT shared secret
     let ss_wrong = mlkem512::decaps(&sk_b, &enc.ciphertext).unwrap();
     assert_ne!(
         ss_wrong, enc.shared_secret,
@@ -78,7 +65,6 @@ fn mlkem512_negative_corrupted_ct() {
     let msg = [0xabu8; 32];
     let enc = mlkem512::encaps_deterministic(&pk, &msg).unwrap();
 
-    // Verify baseline roundtrip
     let ss_good = mlkem512::decaps(&sk, &enc.ciphertext).unwrap();
     assert_eq!(enc.shared_secret, ss_good, "baseline roundtrip failed");
 
@@ -107,7 +93,6 @@ fn mlkem512_negative_zero_ct() {
     let msg = [0xabu8; 32];
     let enc = mlkem512::encaps_deterministic(&pk, &msg).unwrap();
 
-    // Verify baseline roundtrip
     let ss_good = mlkem512::decaps(&sk, &enc.ciphertext).unwrap();
     assert_eq!(enc.shared_secret, ss_good, "baseline roundtrip failed");
 
@@ -159,7 +144,6 @@ fn mlkem512_rejects_corrupted_stored_public_key_hash() {
 
     const SK_PK_OFFSET: usize = 2 * 384;
     const PK_SIZE: usize = 800;
-    // Build a corrupted SK by mutating the correct-length bytes then re-wrapping
     let mut corrupted = sk.as_ref().to_vec();
     corrupted[SK_PK_OFFSET + PK_SIZE] ^= 0x01;
     let corrupted_sk = mlkem512::SecretKey::from_bytes(&corrupted).unwrap();
@@ -173,12 +157,10 @@ fn mlkem512_rejects_oversized_secret_key() {
     let (pk, sk) = mlkem512::keypair_from_seed(&[0x01u8; 32]).unwrap();
     let enc = mlkem512::encaps_deterministic(&pk, &[0xabu8; 32]).unwrap();
 
-    // from_bytes rejects wrong-length inputs
     assert!(mlkem512::SecretKey::from_bytes(&sk.as_ref()[..sk.as_ref().len() / 2]).is_err());
     assert!(mlkem512::SecretKey::from_bytes(&vec![0u8; sk.as_ref().len() + 1]).is_err());
     assert!(mlkem512::SecretKey::from_bytes(&[]).is_err());
 
-    // A valid-length key still works
     mlkem512::decaps(&sk, &enc.ciphertext).expect("valid decaps should succeed");
 }
 
@@ -232,8 +214,6 @@ fn decapsulation_rejection_path_does_not_use_slice_equality() {
     assert!(!kem_source.contains("ct == ct_prime"));
     assert!(!kem_source.contains("ct_prime.as_slice()"));
 }
-
-// ─── ML-KEM-768 ───
 
 #[test]
 fn mlkem768_negative_wrong_key() {
@@ -302,8 +282,6 @@ fn mlkem768_negative_zero_ct() {
         "decaps with zero ciphertext should produce a different shared secret"
     );
 }
-
-// ─── ML-KEM-1024 ───
 
 #[test]
 fn mlkem1024_negative_wrong_key() {

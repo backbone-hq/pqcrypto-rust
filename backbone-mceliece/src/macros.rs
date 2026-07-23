@@ -28,25 +28,21 @@
 ///   `load4`, `store8`, `shake256_into`, all constants (GFBITS, SYS_N, SYS_T, etc.)
 #[macro_export]
 macro_rules! define_variant {
-    // GF12-style: default FFT table names (3 tables)
     ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr) => {
         $crate::define_variant!($params, $core, $doc_variant, $doc_sec,
             fft_consts = FFT_CONSTS, fft_powers = FFT_POWERS, fft_scalars = FFT_SCALARS);
     };
-    // 3-table form (GF12-style)
     ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
      fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident) => {
         $crate::define_variant!(@body $params, $core, $doc_variant, $doc_sec,
             $consts, $powers, $scalars);
     };
-    // 4-table form (GF13+)
     ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
      fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident,
      fft_extra = $extra:ident) => {
         $crate::define_variant!(@body $params, $core, $doc_variant, $doc_sec,
             $consts, $powers, $scalars, $extra);
     };
-    // ── Internal body (shared by both 3-table and 4-table forms) ─────
     (@body $params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
      $consts:ident, $powers:ident, $scalars:ident $(, $extra:ident)?) => {
         use alloc::vec::Vec;
@@ -71,7 +67,6 @@ macro_rules! define_variant {
         #[doc = concat!($doc_variant, " public key.")]
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct PublicKey {
-            /// The raw public key bytes.
             pub pk: Vec<u8>,
         }
 
@@ -94,13 +89,10 @@ macro_rules! define_variant {
         /// Result of a successful encapsulation.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Encapsulation {
-            /// The shared secret (32 bytes).
             pub shared_secret: [u8; 32],
-            /// The ciphertext.
             pub ciphertext: Vec<u8>,
         }
 
-        // ── Error-vector generation ──────────────────────────────────────
 
         /// Generate an error vector of weight `SYS_T` from a 32-byte seed.
         fn gen_e_from_seed(seed32: [u8; 32]) -> [u8; SYS_N / 8] {
@@ -130,7 +122,6 @@ macro_rules! define_variant {
                     continue;
                 }
 
-                // Check for duplicates
                 let mut has_dup = false;
                 'outer: for i in 1..SYS_T {
                     for j in 0..i {
@@ -144,7 +135,6 @@ macro_rules! define_variant {
                     continue;
                 }
 
-                // Convert to error bytes
                 let mut e = [0u8; SYS_N / 8];
                 for &pos in &positions {
                     let idx = pos as usize;
@@ -154,7 +144,6 @@ macro_rules! define_variant {
             }
         }
 
-        // ── Encapsulation ────────────────────────────────────────────────
 
         /// SHAKE256 hash producing a 32-byte output.
         fn shake256_32(input: &[u8]) -> [u8; 32] {
@@ -211,7 +200,6 @@ macro_rules! define_variant {
             Ok(shared)
         }
 
-        // ── Key generation ──────────────────────────────────────────────
 
         fn keypair_from_seed_bytes(seed32: [u8; 32]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
             let mut seed = SecretArray::<u8, 33>::new();
@@ -293,9 +281,7 @@ macro_rules! define_variant {
             Err($crate::error::Error::KeygenFailed)
         }
 
-        // ── Public KEM API ──────────────────────────────────────────────
 
-        /// Generate a keypair deterministically from a seed.
         ///
         /// The seed is expanded via SHAKE-256. Any seed length is accepted.
         #[doc = concat!("Generate an ", $doc_variant, " keypair deterministically from a seed.")]
@@ -308,12 +294,10 @@ macro_rules! define_variant {
             reader.read(&mut seed32);
             keypair_from_seed_bytes(seed32)
         }
-        /// Generate a keypair from a seed (alias for keygen).
         pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
             keygen(seed)
         }
 
-        /// Encapsulate a shared secret under this public key.
         #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key.")]
         pub fn encaps(pk: &PublicKey) -> Result<Encapsulation, $crate::error::Error> {
             let mut seed = [0u8; 32];
@@ -321,7 +305,6 @@ macro_rules! define_variant {
             encaps_deterministic(pk, &seed)
         }
 
-        /// Encapsulate a shared secret under this public key using a specific seed.
         #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key using a specific seed.")]
         pub fn encaps_deterministic(
             pk: &PublicKey,
@@ -337,7 +320,6 @@ macro_rules! define_variant {
             Ok(encaps_from_seed_bytes(&pk.pk, *seed32))
         }
 
-        /// Decapsulate a shared secret from a ciphertext using this secret key.
         #[doc = concat!("Decapsulate a shared secret from a ciphertext using an ", $doc_variant, " secret key.")]
         pub fn decaps(
             sk: &SecretKey,
@@ -346,7 +328,6 @@ macro_rules! define_variant {
             decaps_bytes(sk.as_ref(), ct)
         }
 
-        // AsRef impls
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] {
                 &self.pk
@@ -363,7 +344,6 @@ macro_rules! define_variant {
                 Ok(Self { pk: bytes.to_vec() })
             }
 
-            /// Return the raw public key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.pk
             }
@@ -384,7 +364,6 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            /// Return the raw secret key bytes.
             pub fn as_bytes(&self) -> &[u8] {
                 &self.sk
             }

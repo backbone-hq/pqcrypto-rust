@@ -18,7 +18,6 @@ pub(crate) fn sample_poly_eta(poly: &mut Poly, seed: &[u8], nonce: u16, eta: usi
         let t0 = x & 0x0F;
         let t1 = (x >> 4) & 0x0F;
         if eta == 2 {
-            // Reference: accept if < 15, value = 2 - (t % 5)
             if t0 < 15 {
                 let v = t0 - ((205 * t0) >> 10) * 5;
                 poly.coeffs[i] = 2 - v;
@@ -30,7 +29,6 @@ pub(crate) fn sample_poly_eta(poly: &mut Poly, seed: &[u8], nonce: u16, eta: usi
                 i += 1;
             }
         } else {
-            // eta == 4: accept if < 9, value = 4 - t
             if t0 < 9 {
                 poly.coeffs[i] = 4 - t0;
                 i += 1;
@@ -60,7 +58,6 @@ pub(crate) fn sample_poly_gamma1(poly: &mut Poly, seed: &[u8], nonce: u16, gamma
     let mut reader = shake.finalize_xof();
     reader.read(buf);
     if gamma1 == (1 << 17) {
-        // ML-DSA-44: 18 bits per coeff, 4 coeffs per 9 bytes
         let mask = 0x3FFFF;
         let gamma1i = 1 << 17;
         for i in 0..64 {
@@ -87,7 +84,6 @@ pub(crate) fn sample_poly_gamma1(poly: &mut Poly, seed: &[u8], nonce: u16, gamma
             poly.coeffs[4 * i + 3] = gamma1i - c3;
         }
     } else {
-        // ML-DSA-65/87: 20 bits per coeff, 2 coeffs per 5 bytes
         let mask = 0xFFFFF;
         let gamma1i = 1 << 19;
         for i in 0..128 {

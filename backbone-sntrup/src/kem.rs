@@ -137,24 +137,19 @@ fn mod3_quotient(num: i8, den: i8) -> i8 {
     mod3_product(num, mod3_reciprocal(den))
 }
 
-/// Compute s^(-1) in R3 = GF(3)[x]/(x^p - x - 1).
-/// Returns Ok(r) if s is invertible, Err(()) otherwise.
 pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
     let loops = 2 * P + 1;
 
-    // f = x^p - x - 1 (the modulus)
     let mut f = SecretVec::<i8>::new(P + 1);
     f[0] = -1;
     f[1] = -1;
     f[P] = 1;
 
-    // g = s (input polynomial)
     let mut g = SecretVec::<i8>::new(P + 1);
     for i in 0..P {
         g[i] = s.0[i];
     }
 
-    // u = 0, v = 1
     let mut u = SecretVec::<i8>::new(loops + 1);
     let mut v = SecretVec::<i8>::new(loops + 1);
     v[0] = 1;
@@ -163,18 +158,14 @@ pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
     let mut e = i32::try_from(P).expect("P fits in i32");
 
     for loop_idx in 0..loops {
-        // c = g[p] / f[p]  (leading coefficient quotient in GF(3))
         let c = mod3_quotient(g[P], f[P]);
 
-        // g = g - c * f, then shift right
         for i in 0..=P {
             g[i] = mod3_minusproduct(g[i], f[i], c);
         }
-        // shift g right (optimized memmove)
         g.copy_within(0..P, 1);
         g[0] = 0;
 
-        // v = v - c * u, then shift right
         if i32::try_from(loop_idx).expect("loop_idx fits in i32")
             < i32::try_from(P).expect("P fits in i32")
         {
@@ -195,11 +186,9 @@ pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
 
         e -= 1;
 
-        // Conditional swap if e < d AND g[p] != 0
         let smaller_mask = (e - d) >> 31;
         let swapmask = smaller_mask & mod3_nonzero_mask(g[P]);
 
-        // Constant-time swap using arithmetic masking (no branch on secret data)
         let mask8 = swapmask as i8;
         {
             let delta = (e ^ d) & swapmask;
@@ -211,7 +200,6 @@ pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
             f[i] ^= delta;
             g[i] ^= delta;
         }
-        // C incs loop before swap check, so use loop_idx+1
         if loop_idx + 1 < P {
             for i in 0..=loop_idx + 1 {
                 let delta = (u[i] ^ v[i]) & mask8;
@@ -228,14 +216,12 @@ pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
         }
     }
 
-    // Normalize result
     let c = mod3_reciprocal(f[P]);
     let mut result = R3::<P>::default();
     for i in 0..P {
         result.0[i] = mod3_product(u[P + i], c);
     }
 
-    // Verify: s * r = 1 mod (x^p - x - 1)
     let prod = s.mul(&result);
     let mut ok = true;
     ok &= prod.0[0] == 1;
@@ -254,20 +240,17 @@ pub(crate) fn r3_recip<const P: usize>(s: &R3<P>) -> Result<R3<P>, ()> {
 fn rq_recip3<const P: usize, const Q: i16>(f3: &Rq<P, Q>) -> Result<Rq<P, Q>, ()> {
     let loops = 2 * P + 1;
 
-    // f = x^p - x - 1 (the modulus)
     let mut f = SecretVec::<i32>::new(P + 1);
     f[0] = -1;
     f[1] = -1;
     f[P] = 1;
 
-    // g = 3 * input (since we want recip of 3*f3)
     let mut g = SecretVec::<i32>::new(P + 1);
     for i in 0..P {
         g[i] = 3 * i32::from(f3.0[i]);
     }
     g[P] = 0;
 
-    // u = 0, v = 1
     let mut u = SecretVec::<i32>::new(loops + 1);
     let mut v = SecretVec::<i32>::new(loops + 1);
     v[0] = 1;
@@ -276,17 +259,14 @@ fn rq_recip3<const P: usize, const Q: i16>(f3: &Rq<P, Q>) -> Result<Rq<P, Q>, ()
     let mut e = i32::try_from(P).expect("P fits in i32");
 
     for loop_idx in 0..loops {
-        // c = g[p] / f[p]  (leading coefficient quotient in GF(q))
         let c = modq_divide::<Q>(g[P], f[P]);
 
-        // g = g - c * f, then shift right
         for i in 0..=P {
             g[i] = modq_sub::<Q>(g[i], modq_mul::<Q>(c, f[i]));
         }
         g.copy_within(0..P, 1);
         g[0] = 0;
 
-        // v = v - c * u, then shift right
         if i32::try_from(loop_idx).expect("loop_idx fits in i32")
             < i32::try_from(P).expect("P fits in i32")
         {
@@ -307,11 +287,9 @@ fn rq_recip3<const P: usize, const Q: i16>(f3: &Rq<P, Q>) -> Result<Rq<P, Q>, ()
 
         e -= 1;
 
-        // Conditional swap if e < d AND g[p] != 0
         let smaller_mask = (e - d) >> 31;
         let swapmask = smaller_mask & modq_nonzero_mask::<Q>(g[P]);
 
-        // Constant-time swap using arithmetic masking (no branch on secret data)
         {
             let delta = (e ^ d) & swapmask;
             e ^= delta;
@@ -322,7 +300,6 @@ fn rq_recip3<const P: usize, const Q: i16>(f3: &Rq<P, Q>) -> Result<Rq<P, Q>, ()
             f[i] ^= delta;
             g[i] ^= delta;
         }
-        // Same loop-offset as r3_recip: C increments loop before swap
         if loop_idx + 1 < P {
             for i in 0..=loop_idx + 1 {
                 let delta = (u[i] ^ v[i]) & swapmask;
@@ -339,7 +316,6 @@ fn rq_recip3<const P: usize, const Q: i16>(f3: &Rq<P, Q>) -> Result<Rq<P, Q>, ()
         }
     }
 
-    // Result = 1/f[p] * u[p..2p]
     if f[P] == 0 {
         return Err(());
     }
@@ -377,7 +353,6 @@ fn modq_divide<const Q: i16>(a: i32, b: i32) -> i32 {
 
 fn modq_reciprocal<const Q: i16>(a: i32) -> i32 {
     let q = i32::from(Q);
-    // Extended Euclidean algorithm for modular inverse
     let mut t = 0i32;
     let mut newt = 1i32;
     let mut r = q;
@@ -438,7 +413,6 @@ fn random_small<const P: usize>(seed: &[u8]) -> R3<P> {
     poly
 }
 
-/// Generate a keypair.
 pub(crate) fn keypair<const P: usize, const Q: i16>(
     pk: &mut [u8],
     sk: &mut [u8],
@@ -469,7 +443,6 @@ pub(crate) fn keypair<const P: usize, const Q: i16>(
     prng_label(seed, b'f', 0, &mut f_buf);
     let f = random_weightw::<P>(&f_buf, w);
 
-    // Compute h = g / (3*f) in Rq
     let mut f_rq = Rq::<P, Q>::default();
     for i in 0..P {
         f_rq.0[i] = i16::from(f.0[i]);
@@ -481,11 +454,9 @@ pub(crate) fn keypair<const P: usize, const Q: i16>(
     }
     let h = recip.mul(&g_rq);
 
-    // Encode outputs
     h.encode(pk)
         .map_err(|_| crate::error::Error::DecapsulationFailed)?;
 
-    // SK: f || grecip || pk || rho || Hash4(pk)
     f.encode(&mut sk[..r3_enc])
         .expect("sk buffer is exactly r3_enc");
     grecip
@@ -501,7 +472,6 @@ pub(crate) fn keypair<const P: usize, const Q: i16>(
     Ok(())
 }
 
-/// Encapsulate: generate shared secret and ciphertext.
 pub(crate) fn encaps<const P: usize, const Q: i16>(
     pk: &[u8],
     r_seed: &[u8],
@@ -523,11 +493,10 @@ pub(crate) fn encaps<const P: usize, const Q: i16>(
     r.encode(&mut r_enc)
         .expect("r_enc buffer is exactly r3_enc");
 
-    // Compute c = Rounded(h * r)
     let hr = h.mul_small(&r);
     let mut c = Rq::<P, Q>::default();
     for i in 0..P {
-        c.0[i] = hr.0[i]; // h*r in Rq
+        c.0[i] = hr.0[i];
     }
     let rounded = c.round3();
 
@@ -546,7 +515,6 @@ pub(crate) fn encaps<const P: usize, const Q: i16>(
     Ok((ss, ct))
 }
 
-/// Decapsulate: recover shared secret from ciphertext.
 pub(crate) fn decaps<const P: usize, const Q: i16>(
     sk: &[u8],
     ct: &[u8],
@@ -579,10 +547,8 @@ pub(crate) fn decaps<const P: usize, const Q: i16>(
     let rounded_c = Rq::<P, Q>::decode_rounded(&ct[..rounded_bytes])
         .map_err(|_| crate::error::Error::InvalidCiphertextLength)?;
 
-    // t = c * f in Rq
     let t = rounded_c.mul_small(&f);
 
-    // t3 = 3 * t mod q, then reduce to R3
     let q = i32::from(Q);
     let qs = crate::poly::qshift(Q);
     let mut t3 = R3::<P>::default();
@@ -596,7 +562,6 @@ pub(crate) fn decaps<const P: usize, const Q: i16>(
         t3.0[i] = mod3_freeze_i8(val);
     }
 
-    // r_recovered = t3 * grecip in R3
     let r_recovered = t3.mul(&grecip);
 
     let mut r_dec = r_recovered;
@@ -638,7 +603,6 @@ mod tests {
 
     #[test]
     fn test_r3_recip_identity() {
-        // 1^(-1) = 1 in R3
         let one = R3::<P>::constant(1);
         let inv = r3_recip::<P>(&one).unwrap();
         assert_eq!(inv, one);
@@ -661,16 +625,12 @@ mod tests {
 
     #[test]
     fn test_rq_recip3_simple() {
-        // f = 1 (the constant polynomial 1 in R3)
         let one = R3::<P>::constant(1);
-        // Convert to Rq
         let mut f_rq = Rq::<P, Q>::default();
         for i in 0..P {
             f_rq.0[i] = i16::from(one.0[i]);
         }
-        // rq_recip3 computes 1/(3*f) in Rq
         let recip = rq_recip3::<P, Q>(&f_rq).unwrap();
-        // Verify: 3 * f * recip = 1 in Rq
         let mut f3_rq = Rq::<P, Q>::default();
         for i in 0..P {
             f3_rq.0[i] = (3 * i32::from(one.0[i])) as i16;
@@ -695,7 +655,6 @@ mod tests {
         assert!(pk.iter().any(|&b| b != 0));
         assert!(sk.iter().any(|&b| b != 0));
 
-        // Test encaps/decaps roundtrip
         let r_seed = [0x13u8; 32];
         let (ss_enc, ct) = encaps::<P, Q>(&pk, &r_seed, W, CT_BYTES).unwrap();
         let ss_dec = decaps::<P, Q>(&sk, &ct, W).unwrap();
@@ -711,29 +670,24 @@ mod tests {
         let mut sk = vec![0u8; sk_bytes];
         keypair::<P, Q>(&mut pk, &mut sk, &seed, W).unwrap();
 
-        // Decode h from pk
         let h = Rq::<P, Q>::decode(&pk).unwrap();
 
-        // Decode f and grecip from sk
         let r3_enc = r3_encoded_bytes(P);
         let f = R3::<P>::decode(&sk[..r3_enc]).unwrap();
         let grecip = R3::<P>::decode(&sk[r3_enc..2 * r3_enc]).unwrap();
 
-        // Compute 3*f in Rq
         let mut f3 = Rq::<P, Q>::default();
         for i in 0..P {
             f3.0[i] = (3 * i32::from(f.0[i])) as i16;
         }
 
-        let h_f3 = h.mul(&f3); // h * (3*f) in Rq
+        let h_f3 = h.mul(&f3);
 
-        // Reduce to R3
         let mut h_f3_mod3 = R3::<P>::default();
         for i in 0..P {
             h_f3_mod3.0[i] = mod3_freeze_i8(i32::from(h_f3.0[i]));
         }
 
-        // Multiply by grecip: (h * 3*f mod 3) * grecip should = 1
         let check = h_f3_mod3.mul(&grecip);
         let mut ok = check.0[0] == 1;
         for i in 1..P {
@@ -778,7 +732,6 @@ mod tests {
 
     #[test]
     fn test_rq_recip3_real_f_857() {
-        // Generate a real keypair and verify rq_recip3 for its f
         const P: usize = 857;
         const Q: i16 = 5167;
         const W: usize = 322;
@@ -794,7 +747,6 @@ mod tests {
         for i in 0..P {
             f_rq.0[i] = i16::from(f.0[i]);
         }
-        // Delete the grecip from sk to test rq_recip3 specifically
         let recip = rq_recip3::<P, Q>(&f_rq).unwrap();
         let mut f3_rq = Rq::<P, Q>::default();
         for i in 0..P {

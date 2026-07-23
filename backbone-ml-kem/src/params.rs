@@ -61,4 +61,4 @@ impl Params for MLKEM1024 {
 pub const N: usize = 256;
 pub(crate) const Q: i32 = 3329;
 /// Byte length of a serialized polynomial (256 * 12 / 8).
-pub const POLY_BYTES: usize = 384; // 256 * 12 / 8
+pub const POLY_BYTES: usize = 384;
