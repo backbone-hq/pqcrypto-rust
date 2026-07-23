@@ -103,7 +103,7 @@ macro_rules! define_variant {
         }
 
 
-        fn _sign_deterministic_submission(
+        fn _sign_deterministic_pure(
             sk: &SecretKey,
             msg: &[u8],
             seed: &[u8],
@@ -112,7 +112,7 @@ macro_rules! define_variant {
             Ok(Signature { sig })
         }
 
-        fn _verify_submission(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
+        fn _verify_pure(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
             $crate::sign::verify::<$param_type>(&pk.pk, msg, &signature.sig)
         }
 
@@ -125,16 +125,16 @@ macro_rules! define_variant {
             let mut seed = alloc::vec![0u8; <$param_type as Params>::N];
             getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
             let formatted = format_slh_message(&[], msg)?;
-            _sign_deterministic_submission(sk, &formatted, &seed)
+            _sign_deterministic_pure(sk, &formatted, &seed)
         }
 
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " (submission API — no FIPS 205 prefix).")]
+        #[doc = concat!("Sign a message using ", stringify!($param_type), " in pure mode.")]
         ///
         /// Uses system randomness for the optional randomizer `optrand`.
-        pub fn sign_submission(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
+        pub fn sign_pure(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
             let mut seed = alloc::vec![0u8; <$param_type as Params>::N];
             getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
-            _sign_deterministic_submission(sk, msg, &seed)
+            _sign_deterministic_pure(sk, msg, &seed)
         }
 
         #[doc = concat!("Sign a message using ", stringify!($param_type), " with a specific seed (FIPS 205 SLH-DSA).")]
@@ -147,18 +147,18 @@ macro_rules! define_variant {
             seed: &[u8],
         ) -> Result<Signature, Error> {
             let formatted = format_slh_message(&[], msg)?;
-            _sign_deterministic_submission(sk, &formatted, seed)
+            _sign_deterministic_pure(sk, &formatted, seed)
         }
 
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a specific seed (submission API — no FIPS 205 prefix).")]
+        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a specific seed in pure mode.")]
         ///
         /// The `seed` is used as the optional randomizer `optrand`.
-        pub fn sign_deterministic_submission(
+        pub fn sign_deterministic_pure(
             sk: &SecretKey,
             msg: &[u8],
             seed: &[u8],
         ) -> Result<Signature, Error> {
-            _sign_deterministic_submission(sk, msg, seed)
+            _sign_deterministic_pure(sk, msg, seed)
         }
 
         #[doc = concat!("Sign a message using ", stringify!($param_type), " with a FIPS 205 context.")]
@@ -180,7 +180,7 @@ macro_rules! define_variant {
             seed: &[u8],
         ) -> Result<Signature, Error> {
             let formatted = format_slh_message(ctx, msg)?;
-            _sign_deterministic_submission(sk, &formatted, seed)
+            _sign_deterministic_pure(sk, &formatted, seed)
         }
 
         #[doc = concat!("Sign a prehashed message using ", stringify!($param_type), " with a FIPS 205 context and OID.")]
@@ -192,7 +192,7 @@ macro_rules! define_variant {
             seed: &[u8],
         ) -> Result<Signature, Error> {
             let formatted = format_hash_slh_message(ctx, prehash_oid, prehash)?;
-            _sign_deterministic_submission(sk, &formatted, seed)
+            _sign_deterministic_pure(sk, &formatted, seed)
         }
 
         #[doc = concat!("Sign a message with HashSLH-DSA-SHAKE-256 using ", stringify!($param_type), ".")]
@@ -217,13 +217,13 @@ macro_rules! define_variant {
             let Ok(formatted) = format_slh_message(&[], msg) else {
                 return false;
             };
-            _verify_submission(pk, &formatted, signature)
+            _verify_pure(pk, &formatted, signature)
         }
 
-        #[doc = concat!("Verify a ", stringify!($param_type), " signature (submission API — no FIPS 205 prefix).")]
+        #[doc = concat!("Verify a ", stringify!($param_type), " signature in pure mode.")]
         #[must_use]
-        pub fn verify_submission(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            _verify_submission(pk, msg, signature)
+        pub fn verify_pure(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
+            _verify_pure(pk, msg, signature)
         }
 
         #[doc = concat!("Verify a ", stringify!($param_type), " signature and return a validation error on malformed raw input.")]
@@ -252,7 +252,7 @@ macro_rules! define_variant {
             let Ok(formatted) = format_slh_message(ctx, msg) else {
                 return false;
             };
-            _verify_submission(pk, &formatted, signature)
+            _verify_pure(pk, &formatted, signature)
         }
 
         #[doc = concat!("Verify a prehashed ", stringify!($param_type), " signature with a FIPS 205 context and OID.")]
@@ -267,7 +267,7 @@ macro_rules! define_variant {
             let Ok(formatted) = format_hash_slh_message(ctx, prehash_oid, prehash) else {
                 return false;
             };
-            _verify_submission(pk, &formatted, signature)
+            _verify_pure(pk, &formatted, signature)
         }
 
         #[doc = concat!("Verify a HashSLH-DSA-SHAKE-256 signature using ", stringify!($param_type), ".")]

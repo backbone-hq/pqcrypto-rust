@@ -86,7 +86,7 @@ macro_rules! kat_verify_test {
             };
 
             assert!(
-                $module::verify_submission(&pk, &msg_raw, &sig),
+                $module::verify_pure(&pk, &msg_raw, &sig),
                 "Verification failed for {}",
                 $variant_name
             );
@@ -142,7 +142,7 @@ macro_rules! kat_sign_test {
             let optrand = vec![0u8; <$variant>::N];
 
             let (_pk, sk) = $module::keygen(keygen_seed).unwrap();
-            let sig = $module::sign_deterministic_submission(&sk, &msg_raw, &optrand).unwrap();
+            let sig = $module::sign_deterministic_pure(&sk, &msg_raw, &optrand).unwrap();
 
             assert_eq!(
                 sig.sig.len(),
