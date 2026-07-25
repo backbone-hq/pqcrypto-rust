@@ -32,6 +32,7 @@ impl<T: Zeroize> Drop for SecretVec<T> {
     }
 }
 
+#[allow(missing_docs)]
 impl<T: Zeroize> SecretVec<T> {
     #[must_use]
     pub fn new(len: usize) -> Self
@@ -96,12 +97,14 @@ impl<T: Zeroize, const N: usize> Drop for SecretArray<T, N> {
     }
 }
 
+#[allow(missing_docs)]
 impl<T: Zeroize + Clone + Default, const N: usize> SecretArray<T, N> {
     #[must_use]
     pub fn new() -> Self {
         SecretArray(array_from_default::<T, N>())
     }
 
+    /// Create a `SecretArray` from an existing fixed-size array.
     #[must_use]
     pub fn from_array(arr: [T; N]) -> Self {
         SecretArray(arr)

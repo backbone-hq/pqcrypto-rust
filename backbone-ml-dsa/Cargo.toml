@@ -16,8 +16,9 @@ workspace = true
 [dependencies]
 subtle = { workspace = true }
 safe_arch = { version = "1", optional = true }
-backbone-pqcrypto-internals = { version = "0.1.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
 zeroize = { workspace = true }
+sha2 = { workspace = true }
 sha3 = { workspace = true }
 getrandom = { workspace = true }
 

@@ -48,28 +48,6 @@ pub fn ct_lt_usize(a: usize, b: usize) -> Choice {
     ct_gt_usize(b, a)
 }
 
-/// Largest value in `values` (CT reduction).
-///
-/// # Safety / Correctness
-///
-/// **All inputs must be non-negative (`>= 0`).** Negative values cause
-/// incorrect results because `wrapping_sub` overflow flips the sign bit
-/// used for the CT mask. This is not enforced at runtime — callers are
-/// responsible for upholding the invariant.
-#[must_use]
-pub fn ct_max_i32(values: &[i32]) -> i32 {
-    debug_assert!(
-        values.iter().all(|&v| v >= 0),
-        "ct_max_i32: all inputs must be non-negative"
-    );
-    let mut max_val = 0i32;
-    for &v in values {
-        let mask = (max_val.wrapping_sub(v)) >> 31;
-        max_val ^= mask & (max_val ^ v);
-    }
-    max_val
-}
-
 /// CT count of elements ≠ `zero`. Branching per element would reveal support
 /// patterns of secret vectors.
 pub fn ct_count_nonzero<T: ConstantTimeEq>(values: &[T], zero: &T) -> usize {
@@ -115,13 +93,6 @@ mod tests {
         assert_eq!(ct_lt_usize(3, 5).unwrap_u8(), 1);
         assert_eq!(ct_lt_usize(5, 5).unwrap_u8(), 0);
         assert_eq!(ct_lt_usize(7, 5).unwrap_u8(), 0);
-    }
-
-    #[test]
-    fn test_ct_max_i32() {
-        assert_eq!(ct_max_i32(&[]), 0);
-        assert_eq!(ct_max_i32(&[5]), 5);
-        assert_eq!(ct_max_i32(&[3, 7, 1, 9, 4]), 9);
     }
 
     #[test]

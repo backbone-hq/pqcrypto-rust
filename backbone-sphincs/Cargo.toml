@@ -14,7 +14,7 @@ exclude = ["tests/"]
 workspace = true
 
 [dependencies]
-backbone-pqcrypto-internals = { version = "0.1.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
 zeroize = { workspace = true }
 sha3 = { workspace = true }
 sha2 = { workspace = true }

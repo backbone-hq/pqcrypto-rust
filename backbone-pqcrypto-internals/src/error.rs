@@ -58,50 +58,6 @@ pub trait PqcError: fmt::Debug + fmt::Display + PartialEq + Eq + Send + Sync + '
     /// Returns `None` if the error has no corresponding common kind
     /// (i.e., it's an algorithm-specific error not in the shared taxonomy).
     fn to_kind(&self) -> Option<PqcErrorKind>;
-
-    /// Attempt to construct this error from a `PqcErrorKind`.
-    ///
-    /// Returns `None` if the kind doesn't map to a variant in this error type.
-    fn from_kind(kind: PqcErrorKind) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-/// A boxed error type that can hold any pqcrypto error.
-///
-/// Useful when you need to return errors from multiple pqcrypto crates
-/// through a single return type.
-#[cfg(feature = "std")]
-pub type BoxedPqcError = alloc::boxed::Box<dyn core::error::Error + Send + Sync>;
-
-/// Extension trait for `Result` to add backbone-specific error helpers.
-pub trait PqcResultExt<T, E: PqcError> {
-    /// Map the error to its `PqcErrorKind`, if one exists.
-    fn kind(self) -> Result<T, Option<PqcErrorKind>>;
-
-    /// Convert the error to a boxed `std::error::Error` (requires `std` feature).
-    #[cfg(feature = "std")]
-    fn boxed(self) -> Result<T, BoxedPqcError>
-    where
-        E: core::error::Error;
-}
-
-impl<T, E: PqcError> PqcResultExt<T, E> for Result<T, E> {
-    fn kind(self) -> Result<T, Option<PqcErrorKind>> {
-        self.map_err(|e| e.to_kind())
-    }
-
-    #[cfg(feature = "std")]
-    fn boxed(self) -> Result<T, BoxedPqcError>
-    where
-        E: core::error::Error,
-    {
-        self.map_err(|e| {
-            let boxed: alloc::boxed::Box<dyn core::error::Error + Send + Sync> =
-                alloc::boxed::Box::new(e);
-            boxed
-        })
-    }
 }
 
 /// Convenience macro to implement `PqcError` for a crate's error enum.
@@ -148,12 +104,7 @@ macro_rules! impl_pqc_error {
                 }
             }
 
-            fn from_kind(kind: $crate::error::PqcErrorKind) -> Option<Self> {
-                match kind {
-                    $( $kind => Some(<$error_type>::$variant), )*
-                    _ => None,
-                }
-            }
+
         }
     };
 }
@@ -196,33 +147,5 @@ mod tests {
             Some(PqcErrorKind::RngFailure)
         );
         assert_eq!(TestError::CustomError.to_kind(), None);
-    }
-
-    #[test]
-    fn test_from_kind() {
-        assert_eq!(
-            TestError::from_kind(PqcErrorKind::InvalidKeyLength),
-            Some(TestError::InvalidKeyLength)
-        );
-        assert_eq!(
-            TestError::from_kind(PqcErrorKind::RngFailure),
-            Some(TestError::RngFailure)
-        );
-        assert_eq!(
-            TestError::from_kind(PqcErrorKind::InvalidSecretKeyLength),
-            None
-        );
-    }
-
-    #[test]
-    fn test_result_ext() {
-        let ok: Result<(), TestError> = Ok(());
-        let err: Result<(), TestError> = Err(TestError::RngFailure);
-
-        assert!(ok.kind().is_ok());
-        assert_eq!(err.kind(), Err(Some(PqcErrorKind::RngFailure)));
-
-        let err2: Result<(), TestError> = Err(TestError::CustomError);
-        assert_eq!(err2.kind(), Err(None));
     }
 }

@@ -14,15 +14,12 @@ exclude = ["tests/"]
 workspace = true
 
 [dependencies]
-backbone-pqcrypto-internals = { version = "0.1.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 subtle = { workspace = true }
 zeroize = { workspace = true }
 getrandom = { workspace = true, default-features = false }
-
-[dev-dependencies]
-fastrand = "2"
 
 [features]
 default = ["std", "zeroize"]
