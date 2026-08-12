@@ -6,8 +6,8 @@ crate::define_variant!(
     McEliece348864f,
     gf12,
     "McEliece 348864f",
-    1,
     fft_consts = FFT_CONSTS_348864F,
     fft_powers = FFT_POWERS_348864F,
-    fft_scalars = FFT_SCALARS_348864F
+    fft_scalars = FFT_SCALARS_348864F,
+    fast = true
 );

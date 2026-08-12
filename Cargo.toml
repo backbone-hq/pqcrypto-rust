@@ -12,11 +12,12 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://gitlab.com/backbone-hq/pqcrypto-rust"
+repository = "https://github.com/backbone-hq/pqcrypto-rust"
+homepage = "https://github.com/backbone-hq/pqcrypto-rust"
 authors = ["Backbone Authors <root@backbone.dev>"]
 
 [workspace.dependencies]
@@ -28,8 +29,11 @@ zeroize = { version = "1", default-features = false, features = [
   "derive",
   "alloc",
 ] }
-rand = { version = "0.8", default-features = false }
 subtle = { version = "2", default-features = false }
+aes = { version = "0.9", default-features = false, features = ["zeroize"] }
+ctr = { version = "0.10", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [workspace.lints.rust]
 dead_code = "deny"
@@ -54,3 +58,43 @@ needless_range_loop = "allow"
 std_instead_of_alloc = "warn"
 std_instead_of_core = "warn"
 unwrap_used = "warn"
+
+# ---------------------------------------------------------------------------
+# Workspace build profiles.
+#
+# Defined in the workspace-root manifest (the canonical location — Cargo only
+# reads profiles from here and ignores dependency-defined profiles). Member
+# crates inherit these automatically; nothing is needed per crate. Keep
+# .cargo/config.toml free of [profile] tables: config-level profiles silently
+# override these settings.
+# ---------------------------------------------------------------------------
+
+# Benchmarks: same aggressive optimization as release.
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = 1
+
+# Release profile — best performance.
+# Security: unwind (not abort) so Drop-based zeroization (SecretVec/
+# SecretArray/Zeroizing) runs on panic. Keeps release consistent with the
+# dev/bench defaults; release-pgo inherits this too. Abort in [profile.dev]
+# would also break the test harness's panic isolation.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = 1
+panic = "unwind"
+strip = "symbols"
+
+# Fast iteration profile (dev builds with some optimizations).
+[profile.dev]
+opt-level = 1
+debug = 1
+
+# PGO-optimized release profile (used by cargo-pgo).
+[profile.release-pgo]
+inherits = "release"
+lto = true

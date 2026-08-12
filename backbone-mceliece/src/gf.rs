@@ -164,9 +164,8 @@ pub(crate) fn gf_sq<const GFBITS: usize>(a: u16) -> u16 {
 /// Field inverse: a^(-1) = a^(2^GFBITS - 2) using explicit Itoh-Tsuji chain.
 #[inline]
 pub(crate) fn gf_inv<const GFBITS: usize>(a: u16) -> u16 {
-    if a == 0 {
-        return 0;
-    }
+    // No zero special-case: the Itoh-Tsuji chain yields 0 for input 0, and
+    // the removed `if a == 0` branch was a secret-dependent branch in decaps.
     match GFBITS {
         12 => {
             let out = gf_sq_12(a);
@@ -216,4 +215,102 @@ pub(crate) fn gf_inv<const GFBITS: usize>(a: u16) -> u16 {
 #[inline]
 pub(crate) fn gf_frac<const GFBITS: usize>(den: u16, num: u16) -> u16 {
     gf_mul::<GFBITS>(gf_inv::<GFBITS>(den), num)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    use super::*;
+
+    /// Independent schoolbook GF(2^m) multiply with explicit long-division
+    /// reduction — the ground truth that both the scalar bit-loop AND the
+    /// PCLMULQDQ path must match bit-for-bit (always compiled, so the test
+    /// exercises whichever `gf_mul_12`/`gf_mul_13` variant is active).
+    fn gf_mul_ref(a: u16, b: u16, gfbits: u32) -> u16 {
+        let mut tmp: u64 = 0;
+        for i in 0..gfbits {
+            if (b >> i) & 1 == 1 {
+                tmp ^= u64::from(a) << i;
+            }
+        }
+        // Standard irreducible polynomials (Classic McEliece spec):
+        //   GF(2^12): x^12 + x^3 + 1        (0x1009)
+        //   GF(2^13): x^13 + x^4 + x^3 + x + 1  (0x201B)
+        let poly: u64 = if gfbits == 12 {
+            (1 << 12) | (1 << 3) | 1
+        } else {
+            (1 << 13) | (1 << 4) | (1 << 3) | (1 << 1) | 1
+        };
+        for i in (0..gfbits).rev() {
+            if (tmp >> (i + gfbits)) & 1 == 1 {
+                tmp ^= poly << i;
+            }
+        }
+        (tmp & ((1 << gfbits) - 1)) as u16
+    }
+
+    #[test]
+    fn gf_mul_12_matches_reference() {
+        let edge_a = [0u16, 1, 2, 3, 0xFFF, 0x555, 0xAAA, 0x001, 0x800, 0x7FF];
+        for &a in &edge_a {
+            for b in 0..0x1000u16 {
+                assert_eq!(gf_mul_12(a, b), gf_mul_ref(a, b, 12), "a={a:#x} b={b:#x}");
+            }
+        }
+        let mut rng =
+            backbone_pqcrypto_internals::testutil::XorShift::from_seed(0x9E37_79B9_7F4A_7C15);
+        for _ in 0..20_000 {
+            let a = (rng.next_u64() as u16) & 0xFFF;
+            let b = (rng.next_u64() as u16) & 0xFFF;
+            assert_eq!(
+                gf_mul_12(a, b),
+                gf_mul_ref(a, b, 12),
+                "random a={a:#x} b={b:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn gf_mul_13_matches_reference() {
+        let edge_a = [0u16, 1, 2, 3, 0x1FFF, 0x555, 0xAAA, 0x001, 0x1000, 0xFFF];
+        for &a in &edge_a {
+            for b in 0..0x2000u16 {
+                assert_eq!(gf_mul_13(a, b), gf_mul_ref(a, b, 13), "a={a:#x} b={b:#x}");
+            }
+        }
+        let mut rng =
+            backbone_pqcrypto_internals::testutil::XorShift::from_seed(0xD1B5_4A32_D192_ED03);
+        for _ in 0..20_000 {
+            let a = (rng.next_u64() as u16) & 0x1FFF;
+            let b = (rng.next_u64() as u16) & 0x1FFF;
+            assert_eq!(
+                gf_mul_13(a, b),
+                gf_mul_ref(a, b, 13),
+                "random a={a:#x} b={b:#x}"
+            );
+        }
+    }
+
+    /// Field consistency: every nonzero element must invert to its unique
+    /// multiplicative inverse (exercises the active `gf_mul` path ~18× per
+    /// element, so the PCLMULQDQ path is heavily covered in simd builds).
+    #[test]
+    fn gf_inv_12_multiplicative_inverse() {
+        for a in 1..0x1000u16 {
+            assert_eq!(gf_mul_12(a, gf_inv::<12>(a)), 1, "inv fails at a={a:#x}");
+        }
+        assert_eq!(gf_inv::<12>(0), 0);
+    }
+
+    #[test]
+    fn gf_inv_13_multiplicative_inverse() {
+        for a in 1..0x2000u16 {
+            assert_eq!(gf_mul_13(a, gf_inv::<13>(a)), 1, "inv fails at a={a:#x}");
+        }
+        assert_eq!(gf_inv::<13>(0), 0);
+    }
 }

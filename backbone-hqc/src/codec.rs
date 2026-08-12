@@ -6,25 +6,26 @@
 
 use crate::params::Params;
 use crate::{reed_muller, reed_solomon};
-use alloc::vec;
+use backbone_pqcrypto_internals::secret::SecretVec;
 
 pub(crate) fn encode<P: Params>(em: &mut [u64], m: &[u8]) {
-    let mut tmp = vec![0u8; P::VEC_N1_SIZE_BYTES];
-    reed_solomon::encode::<P>(&mut tmp, m);
-    reed_muller::encode::<P>(em, &tmp);
+    let mut tmp = SecretVec::<u8>::new(P::VEC_N1_SIZE_BYTES);
+    reed_solomon::encode::<P>(tmp.as_mut(), m);
+    reed_muller::encode::<P>(em, tmp.as_ref());
 }
 
 pub(crate) fn decode<P: Params>(m: &mut [u8], em: &[u64]) {
-    let mut tmp = vec![0u8; P::VEC_N1_SIZE_BYTES];
-    reed_muller::decode::<P>(&mut tmp, em);
-    let decoded = reed_solomon::decode::<P>(&mut tmp);
-    m.copy_from_slice(&decoded);
+    let mut tmp = SecretVec::<u8>::new(P::VEC_N1_SIZE_BYTES);
+    reed_muller::decode::<P>(tmp.as_mut(), em);
+    let decoded = reed_solomon::decode::<P>(tmp.as_mut());
+    m.copy_from_slice(decoded.as_ref());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::params::Hqc128;
+    use alloc::vec;
 
     #[test]
     fn test_codec_roundtrip_trace() {

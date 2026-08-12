@@ -7,13 +7,19 @@ problems over the ring `R_q = Z_q[x]/(x^n+1)` with `q = 8380417`.
 Three parameter sets:
 
 | Variant | Security level | PK bytes | SK bytes | Sig bytes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | ML-DSA-44 | 2 (128-bit) | 1312 | 2560 | 2420 |
 | ML-DSA-65 | 3 (192-bit) | 1952 | 4032 | 3309 |
 | ML-DSA-87 | 5 (256-bit) | 2592 | 4896 | 4627 |
 
-Supports both deterministic (pure) and hedged (randomized) signing modes.
-Deterministic mode uses a zero `rnd` per the spec.
+Supports pure and pre-hash (HashML-DSA) signing modes via the `hash_algorithm`
+parameter, with optional domain-separation contexts. Signing is randomized;
+deterministic signatures are produced by seeding a `ChaCha20Rng` with 32 bytes
+and calling `sign_with_rng`.
+
+## Validation
+
+Tested against NIST ACVP vectors (FIPS 204).
 
 ## Other Implementations
 

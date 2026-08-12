@@ -1,48 +1,22 @@
 //! ML-KEM error types.
 
-use core::fmt;
+use backbone_pqcrypto_internals::define_error;
 
-use backbone_pqcrypto_internals::{error::PqcErrorKind, impl_pqc_error};
-
-/// Errors for ML-KEM operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error {
+define_error! {
+    /// Errors for ML-KEM operations.
+    Error;
     /// Invalid key length.
-    InvalidKeyLength,
+    InvalidKeyLength => "invalid public key length",
     /// Invalid public key encoding.
-    InvalidPublicKey,
+    InvalidPublicKey => "invalid public key",
     /// Invalid secret key length.
-    InvalidSecretKeyLength,
+    InvalidSecretKeyLength => "invalid secret key length",
     /// Invalid secret key contents.
-    InvalidSecretKey,
+    InvalidSecretKey => "invalid secret key",
     /// Invalid ciphertext length.
-    InvalidCiphertextLength,
+    InvalidCiphertextLength => "invalid ciphertext length",
+    /// Invalid seed length.
+    InvalidSeedLength => "invalid seed length",
     /// RNG failure (system randomness unavailable).
-    RngFailure,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::InvalidKeyLength => write!(f, "invalid public key length"),
-            Error::InvalidPublicKey => write!(f, "invalid public key"),
-            Error::InvalidSecretKeyLength => write!(f, "invalid secret key length"),
-            Error::InvalidSecretKey => write!(f, "invalid secret key"),
-            Error::InvalidCiphertextLength => write!(f, "invalid ciphertext length"),
-            Error::RngFailure => write!(f, "random number generation failed"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl core::error::Error for Error {}
-
-impl_pqc_error! {
-    Error,
-    InvalidKeyLength => PqcErrorKind::InvalidKeyLength,
-    InvalidPublicKey => PqcErrorKind::InvalidPublicKey,
-    InvalidSecretKeyLength => PqcErrorKind::InvalidSecretKeyLength,
-    InvalidSecretKey => PqcErrorKind::InvalidSecretKey,
-    InvalidCiphertextLength => PqcErrorKind::InvalidCiphertextLength,
-    RngFailure => PqcErrorKind::RngFailure,
+    RngFailure => "random number generation failed",
 }

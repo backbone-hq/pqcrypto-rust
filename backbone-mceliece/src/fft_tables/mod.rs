@@ -2,6 +2,10 @@
 //!
 //! Each submodule corresponds to one variant and defines its tables with
 //! variant-qualified names (e.g. `FFT_CONSTS_348864`).
+//!
+//! These are the FFT bit-sliced constant tables of the Classic McEliece
+//! NIST round-3 submission package, committed as static constants (not
+//! build-generated) for determinism — the values are KAT-verified behavior.
 
 pub(crate) mod v348864;
 pub(crate) mod v348864f;

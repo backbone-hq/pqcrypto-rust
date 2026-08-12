@@ -1,16 +1,17 @@
 /// Helper macro to define a NTRUPLR variant (e.g. ntruplr653, ntruplr761).
 ///
 /// Generates `PublicKey`, `SecretKey`, `Encapsulation` structs,
-/// plus `keygen`, `keypair_from_seed`, `encaps`, `encaps_deterministic`,
+/// plus `keygen`, `keygen_with_rng`, `encaps`, `encaps_with_rng`,
 /// and `decaps` functions using a `Params` implementor.
 #[macro_export]
 macro_rules! define_variant {
-    ($params:ident, $ss_size:expr, $doc_variant:expr, $doc_sec:expr) => {
+    ($params:ident, $ss_size:expr, $doc_variant:expr) => {
         use $crate::error::Error;
         use $crate::params::$params;
         use alloc::vec::Vec;
-        #[cfg(feature = "zeroize")]
-        use zeroize::Zeroize;
+        use backbone_pqcrypto_internals::nist_seed_expander::NistSeedExpander;
+        use $crate::rand_core::CryptoRngCore;
+                use zeroize::Zeroize;
 
         const _P: usize = <$params as $crate::params::Params>::P;
         const _Q: i16 = <$params as $crate::params::Params>::Q;
@@ -24,8 +25,9 @@ macro_rules! define_variant {
         const _TAU3: i32 = <$params as $crate::params::Params>::TAU3;
 
         #[doc = concat!($doc_variant, " public key.")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct PublicKey {
+            #[doc = concat!("Raw ", $doc_variant, " public key bytes.")]
             pub pk: Vec<u8>,
         }
 
@@ -40,8 +42,8 @@ macro_rules! define_variant {
         }
 
         #[doc = concat!($doc_variant, " secret key.")]
-        #[cfg_attr(feature = "zeroize", derive(Zeroize))]
-        #[cfg_attr(feature = "zeroize", zeroize(drop))]
+        #[derive(Zeroize)]
+        #[zeroize(drop)]
         pub struct SecretKey {
             sk: Vec<u8>,
         }
@@ -55,44 +57,87 @@ macro_rules! define_variant {
         }
 
         /// Result of a successful encapsulation.
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, PartialEq, Eq, Zeroize)]
+        #[zeroize(drop)]
         pub struct Encapsulation {
+            #[doc = concat!("Shared secret (", stringify!($ss_size), " bytes).")]
             pub shared_secret: [u8; $ss_size],
+            #[doc = concat!("Ciphertext for ", $doc_variant, ".")]
             pub ciphertext: Vec<u8>,
         }
 
-        #[doc = concat!("Generate an ", $doc_variant, " keypair deterministically from a seed.")]
-        pub fn keygen(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            let mut pk = alloc::vec![0u8; _PK_BYTES];
-            let mut sk = alloc::vec![0u8; _SK_BYTES];
-            $crate::kem::keypair::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(&mut pk, &mut sk, seed, _W)?;
-            Ok((PublicKey { pk }, SecretKey { sk }))
+        impl core::fmt::Debug for Encapsulation {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct("Encapsulation")
+                    .field("shared_secret", &"[REDACTED]")
+                    .field("ciphertext", &self.ciphertext)
+                    .finish()
+            }
         }
 
-        #[doc = concat!("Generate a keypair from a seed (alias for [`keygen`]).")]
-        pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen(seed)
+        /// Key-generation seed length in bytes — the single source of truth for
+        /// both `keygen()` (system randomness) and `keygen_with_rng()` (caller RNG).
+        const KEYGEN_SEED_LEN: usize = 48;
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using system randomness.")]
+        pub fn keygen() -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = [0u8; KEYGEN_SEED_LEN];
+            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
+            keygen_from_seed(&seed)
+        }
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using a caller-provided RNG.")]
+        #[doc = "Draws exactly `KEYGEN_SEED_LEN` bytes from `rng` and expands them via the "]
+        #[doc = "NIST AES-256-CTR DRBG, matching the official KAT harness."]
+        pub fn keygen_with_rng(
+            rng: &mut impl CryptoRngCore,
+        ) -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = [0u8; KEYGEN_SEED_LEN];
+            rng.try_fill_bytes(&mut seed).map_err(|_| Error::RngFailure)?;
+            keygen_from_seed(&seed)
+        }
+
+        fn keygen_from_seed(
+            seed: &[u8; KEYGEN_SEED_LEN],
+        ) -> Result<(PublicKey, SecretKey), Error> {
+            let mut expander = NistSeedExpander::new(seed);
+            let mut pk = alloc::vec![0u8; _PK_BYTES];
+            let mut sk = alloc::vec![0u8; _SK_BYTES];
+            $crate::kem::keypair_drbg::<_P, _Q>(&mut expander, &mut pk, &mut sk, _W)?;
+            Ok((PublicKey { pk }, SecretKey { sk }))
         }
 
         #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key.")]
         pub fn encaps(pk: &PublicKey) -> Result<Encapsulation, Error> {
-            let mut seed = [0u8; 32];
-            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
-            encaps_deterministic(pk, &seed)
+            let mut r = [0u8; 32];
+            getrandom::getrandom(&mut r).map_err(|_| Error::RngFailure)?;
+            encaps_from_r(&pk.pk, &r)
         }
 
-        #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key using a specific seed.")]
-        pub fn encaps_deterministic(
+        #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key ")]
+        #[doc = "using a caller-provided RNG."]
+        #[doc = "Draws the 32-byte randomizer `r` directly from `rng`."]
+        pub fn encaps_with_rng(
             pk: &PublicKey,
-            seed: &[u8],
+            rng: &mut impl CryptoRngCore,
         ) -> Result<Encapsulation, Error> {
-            let (ss, ct_vec) = $crate::kem::encaps::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(&pk.pk, seed, _W, _CT_BYTES)?;
-            Ok(Encapsulation { shared_secret: ss, ciphertext: ct_vec })
+            let mut r = [0u8; 32];
+            rng.try_fill_bytes(&mut r).map_err(|_| Error::RngFailure)?;
+            encaps_from_r(&pk.pk, &r)
+        }
+
+        fn encaps_from_r(pk_bytes: &[u8], r: &[u8; 32]) -> Result<Encapsulation, Error> {
+            let (ss, ct_vec) =
+                $crate::kem::encaps::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(pk_bytes, r, _W, _CT_BYTES)?;
+            Ok(Encapsulation {
+                shared_secret: ss,
+                ciphertext: ct_vec,
+            })
         }
 
         #[doc = concat!("Decapsulate a shared secret from a ciphertext using an ", $doc_variant, " secret key.")]
-        pub fn decaps(sk: &SecretKey, ct: &[u8]) -> Result<[u8; $ss_size], Error> {
-            $crate::kem::decaps::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(sk.as_ref(), ct, _W)
+        pub fn decaps(sk: &SecretKey, ciphertext: &[u8]) -> Result<[u8; $ss_size], Error> {
+            $crate::kem::decaps::<_P, _Q, _TAU0, _TAU1, _TAU2, _TAU3>(sk.as_ref(), ciphertext, _W)
         }
 
         impl AsRef<[u8]> for PublicKey {
@@ -111,35 +156,56 @@ macro_rules! define_variant {
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            pub fn as_bytes(&self) -> &[u8] {
-                &self.sk
+        }
+
+        impl TryFrom<&[u8]> for PublicKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for SecretKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
             }
         }
 
         #[cfg(test)]
         mod tests {
             use super::*;
+            use alloc::vec;
+            use backbone_pqcrypto_internals::kat::FixedRng;
 
             #[test]
-            fn test_keygen_deterministic() {
-                let seed = b"0123456789abcdef0123456789abcdef0123456789abcdef012345678";
-                let (pk1, sk1) = keygen(seed).unwrap();
-                let (pk2, sk2) = keygen(seed).unwrap();
+            fn test_keygen_with_rng() {
+                let seed = b"0123456789abcdef0123456789abcdef0123456789abcdef";
+                let (pk1, sk1) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let (pk2, sk2) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
                 assert_eq!(pk1.pk, pk2.pk);
                 assert_eq!(sk1.as_ref(), sk2.as_ref());
             }
 
             #[test]
             fn test_keygen_different_seeds() {
-                let (pk1, _) = keygen(b"seed123456789012345678901234567890123456789").unwrap();
-                let (pk2, _) = keygen(b"SEED123456789012345678901234567890123456789").unwrap();
+                let (pk1, _) = keygen_with_rng(&mut FixedRng::new(
+                    b"seed1234xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_vec(),
+                ))
+                .unwrap();
+                let (pk2, _) = keygen_with_rng(&mut FixedRng::new(
+                    b"SEED12340000000000000000000000000000000000000000".to_vec(),
+                ))
+                .unwrap();
                 assert_ne!(pk1.pk, pk2.pk);
             }
 
             #[test]
             fn test_encaps_decaps_roundtrip() {
-                let seed = b"0123456789abcdef0123456789abcdef";
-                let (pk, sk) = keygen(seed).unwrap();
+                let seed = b"0123456789abcdef0123456789abcdef0123456789abcdef";
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
                 let enc = encaps(&pk).unwrap();
                 let ss_dec = decaps(&sk, &enc.ciphertext).unwrap();
                 assert_eq!(enc.shared_secret, ss_dec);
@@ -147,8 +213,14 @@ macro_rules! define_variant {
 
             #[test]
             fn test_negative_wrong_key() {
-                let (pk_a, _) = keygen(b"00001111222233334444555566667777").unwrap();
-                let (_, sk_b) = keygen(b"77776666555544443333222211110000").unwrap();
+                let (pk_a, _) = keygen_with_rng(&mut FixedRng::new(
+                    b"000011112222333344445555666677770000000000000000".to_vec(),
+                ))
+                .unwrap();
+                let (_, sk_b) = keygen_with_rng(&mut FixedRng::new(
+                    b"777766665555444433332222111100007777777777777777".to_vec(),
+                ))
+                .unwrap();
                 let enc = encaps(&pk_a).unwrap();
                 let wrong_ss = decaps(&sk_b, &enc.ciphertext).unwrap();
                 assert_ne!(enc.shared_secret, wrong_ss);
@@ -156,10 +228,9 @@ macro_rules! define_variant {
 
             #[test]
             fn test_negative_corrupted_ct() {
-                let seed = b"0123456789abcdef0123456789abcdef";
-                let (pk, sk) = keygen(seed).unwrap();
-                let rng_seed = [0x13u8; 32];
-                let mut enc = encaps_deterministic(&pk, &rng_seed).unwrap();
+                let seed = b"0123456789abcdef0123456789abcdef0123456789abcdef";
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let mut enc = encaps_with_rng(&pk, &mut FixedRng::new(vec![0x13u8; 32])).unwrap();
                 enc.ciphertext[0] ^= 0x01;
                 let tampered_ss = decaps(&sk, &enc.ciphertext).unwrap();
                 assert_ne!(enc.shared_secret, tampered_ss);

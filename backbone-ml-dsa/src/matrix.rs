@@ -1,6 +1,3 @@
-//! ML-DSA (FIPS 204) Matrix Generation
-//! Expansion of seed into matrix A using SHAKE128
-
 use crate::params::Params;
 use crate::poly::Poly;
 use alloc::vec::Vec;
@@ -17,7 +14,6 @@ pub(crate) fn expand_matrix<P: Params>(a: &mut [Vec<Poly>], rho: &[u8]) {
             ]);
 
             let mut reader = shake.finalize_xof();
-            // FIPS 204 rejection sampling to fill a[i][j]
             let block = 168;
             let mut buf = [0u8; 168];
             let buf = &mut buf[..block];

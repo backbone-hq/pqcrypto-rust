@@ -20,6 +20,7 @@ __pycache__/
 # Python venv / caches
 .venv/
 .pytest_cache/
+.ruff_cache/
 
 # Subagent artifacts
 .pi-subagents/
@@ -31,3 +32,8 @@ __pycache__/
 .DS_Store
 .hermes/
 .pi/
+
+# Benchmark harness build dirs (tools/bench)
+tools/bench/target/
+tools/bench/target-simd/
+tools/bench/target-*/

@@ -2,7 +2,13 @@
 
 #[cfg(test)]
 mod sntrup653_kat {
-    use crate::poly::Rq;
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    use crate::poly::{rq_rounded_bytes, Rq};
+    use alloc::vec;
     use backbone_pqcrypto_internals::secret::SecretArray;
 
     const P: usize = 653;
@@ -25,12 +31,13 @@ mod sntrup653_kat {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
 
         let expected = include_bytes!("../../tests/vectors/sntrup653_encode.bin");
 
         assert_eq!(
-            encoded,
+            encoded.as_slice(),
             expected,
             "sntrup653 KAT mismatch: got {} bytes, expected {} bytes",
             encoded.len(),
@@ -39,19 +46,29 @@ mod sntrup653_kat {
     }
 
     #[test]
-    fn kat_decode_roundtrip() {
+    fn encode_decode_roundtrip() {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
         let decoded = Rq::<P, Q>::decode_rounded(&encoded).unwrap();
-        assert_eq!(rounded, decoded, "sntrup653 decode roundtrip mismatch");
+        assert_eq!(
+            rounded, decoded,
+            "sntrup653 encode/decode roundtrip mismatch"
+        );
     }
 }
 
 #[cfg(test)]
 mod sntrup761_kat {
-    use crate::poly::Rq;
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    use crate::poly::{rq_rounded_bytes, Rq};
+    use alloc::vec;
     use backbone_pqcrypto_internals::secret::SecretArray;
 
     const P: usize = 761;
@@ -74,12 +91,13 @@ mod sntrup761_kat {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
 
         let expected = include_bytes!("../../tests/vectors/sntrup761_encode.bin");
 
         assert_eq!(
-            encoded,
+            encoded.as_slice(),
             expected,
             "sntrup761 KAT mismatch: got {} bytes, expected {} bytes",
             encoded.len(),
@@ -88,19 +106,29 @@ mod sntrup761_kat {
     }
 
     #[test]
-    fn kat_decode_roundtrip() {
+    fn encode_decode_roundtrip() {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
         let decoded = Rq::<P, Q>::decode_rounded(&encoded).unwrap();
-        assert_eq!(rounded, decoded, "sntrup761 decode roundtrip mismatch");
+        assert_eq!(
+            rounded, decoded,
+            "sntrup761 encode/decode roundtrip mismatch"
+        );
     }
 }
 
 #[cfg(test)]
 mod sntrup857_kat {
-    use crate::poly::Rq;
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    use crate::poly::{rq_rounded_bytes, Rq};
+    use alloc::vec;
     use backbone_pqcrypto_internals::secret::SecretArray;
 
     const P: usize = 857;
@@ -123,12 +151,13 @@ mod sntrup857_kat {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
 
         let expected = include_bytes!("../../tests/vectors/sntrup857_encode.bin");
 
         assert_eq!(
-            encoded,
+            encoded.as_slice(),
             expected,
             "sntrup857 KAT mismatch: got {} bytes, expected {} bytes",
             encoded.len(),
@@ -137,12 +166,16 @@ mod sntrup857_kat {
     }
 
     #[test]
-    fn kat_decode_roundtrip() {
+    fn encode_decode_roundtrip() {
         let coeffs = make_test_poly();
         let rq = Rq::<P, Q>(SecretArray::from_array(coeffs));
         let rounded = rq.round3();
-        let encoded = rounded.encode_rounded();
+        let mut encoded = vec![0u8; rq_rounded_bytes(P, Q)];
+        rounded.encode_rounded(&mut encoded).unwrap();
         let decoded = Rq::<P, Q>::decode_rounded(&encoded).unwrap();
-        assert_eq!(rounded, decoded, "sntrup857 decode roundtrip mismatch");
+        assert_eq!(
+            rounded, decoded,
+            "sntrup857 encode/decode roundtrip mismatch"
+        );
     }
 }

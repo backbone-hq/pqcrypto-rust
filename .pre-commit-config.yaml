@@ -3,7 +3,7 @@ repos:
     rev: v4.6.0
     hooks:
       - id: check-added-large-files
-        args: [--maxkb=1024]
+        args: [--maxkb=2048]
       - id: check-byte-order-marker
       - id: check-case-conflict
       - id: check-merge-conflict
@@ -17,4 +17,17 @@ repos:
       - id: fmt
       - id: check
       - id: clippy
+        args: [--workspace, --all-targets, --, -D, warnings]
       - id: test
+        args: [--workspace, --lib]
+
+  - repo: local
+    hooks:
+      - id: cargo-doc
+        name: cargo doc
+        description: deny missing documentation across the workspace
+        entry: >-
+          bash -c 'RUSTDOCFLAGS="-D missing_docs" cargo doc
+          --workspace --no-deps'
+        language: system
+        pass_filenames: false

@@ -47,6 +47,23 @@ pub(crate) fn xof_fill(seed: &[u8], out: &mut [u8]) {
     reader.read(out);
 }
 
+/// Read `n` bytes from an XOF reader, consuming `ceil(n/8)·8` stream bytes.
+///
+/// Replicates the FIPS 207 reference's `xof_get_bytes`, which squeezes
+/// 8-byte-aligned chunks and discards the padding — required for byte-exact
+/// parity with the reference's fixed-weight samplers.
+///
+/// Returns a zeroizing buffer: the bytes fully determine the secret noise
+/// polynomials (r2, e, r1) sampled downstream.
+pub(crate) fn xof_read_padded<R: XofReader>(reader: &mut R, n: usize) -> SecretVec<u8> {
+    let read = n.div_ceil(8) * 8;
+    let mut buf = SecretVec::<u8>::new(read);
+    reader.read(&mut buf);
+    let mut out = SecretVec::<u8>::new(n);
+    out[..n].copy_from_slice(&buf[..n]);
+    out
+}
+
 /// Generates the `i` secret key from a seed.
 pub(crate) fn hash_i<P: Params>(seed: &[u8]) -> [u8; 64] {
     let mut hasher = Sha3_512::new();
@@ -94,31 +111,6 @@ pub(crate) fn keygen_from_seed<P: Params>(seed: &[u8]) -> Result<(Vec<u8>, Vec<u
     let mut sk = vec![0u8; P::SK_BYTES];
     hqc::keygen::<P>(&mut pk, &mut sk, seed_pke, sigma, &seed_kem);
     Ok((pk, sk))
-}
-
-pub(crate) fn encaps<P: Params>(ct: &mut [u8], ss: &mut [u8; 32], pk: &[u8]) -> Result<(), Error> {
-    if pk.len() != P::PK_BYTES {
-        return Err(Error::InvalidKeyLength);
-    }
-
-    let mut m = SecretVec::new(P::VEC_K_SIZE_BYTES);
-    getrandom::getrandom(&mut m).map_err(|_| Error::RngFailure)?;
-    let mut salt = vec![0u8; P::SALT_SIZE_BYTES];
-    getrandom::getrandom(&mut salt).map_err(|_| Error::RngFailure)?;
-
-    let hash_ek = hash_h::<P>(pk);
-    let k_theta = Zeroizing::new(hash_g::<P>(&hash_ek, &m, &salt));
-    let theta = &k_theta[P::SS_BYTES..P::SS_BYTES + P::SEED_BYTES];
-
-    let mut u = vec![0u64; P::VEC_N_SIZE_64];
-    let mut v = vec![0u64; P::VEC_N1N2_SIZE_64];
-    hqc::encrypt::<P>(&mut u, &mut v, &m, theta, pk);
-
-    ss.copy_from_slice(&k_theta[..P::SS_BYTES]);
-
-    parsing::hqc_ciphertext_to_string::<P>(ct, &u, &v, &salt);
-
-    Ok(())
 }
 
 /// Deterministic encapsulate: derive m and salt from seed via SHAKE-256.

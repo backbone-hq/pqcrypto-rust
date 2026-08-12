@@ -8,9 +8,9 @@ crate::define_variant!(
     Mceliece460896F,
     gf13_460896,
     "McEliece 460896f",
-    1,
     fft_consts = FFT_CONSTS_460896F,
     fft_powers = FFT_SCALARS_2X_460896F,
     fft_scalars = FFT_SCALARS_4X_460896F,
-    fft_extra = FFT_POWERS_460896F
+    fft_extra = FFT_POWERS_460896F,
+    fast = true
 );

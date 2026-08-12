@@ -1,3 +1,8 @@
+#![allow(clippy::cast_sign_loss)]
+//! GF(2^13) core for the McEliece 13-bit parameter sets.
+//!
+//! One of four in-sync copies — edit `gf13_460896.rs` and regenerate the
+//! siblings. All casts operate on bounded values.
 use crate::common::*;
 use crate::decode;
 use crate::vec_ops::gf13::*;
@@ -52,14 +57,14 @@ fn load8(b: &[u8]) -> u64 {
 
 /// Store a `u64` as 8 bytes in little-endian order.
 pub(crate) fn store8(b: &mut [u8], v: u64) {
-    b[0] = u8::try_from(v & 0xff).expect("byte 0 fits in u8");
-    b[1] = u8::try_from((v >> 8) & 0xff).expect("byte 1 fits in u8");
-    b[2] = u8::try_from((v >> 16) & 0xff).expect("byte 2 fits in u8");
-    b[3] = u8::try_from((v >> 24) & 0xff).expect("byte 3 fits in u8");
-    b[4] = u8::try_from((v >> 32) & 0xff).expect("byte 4 fits in u8");
-    b[5] = u8::try_from((v >> 40) & 0xff).expect("byte 5 fits in u8");
-    b[6] = u8::try_from((v >> 48) & 0xff).expect("byte 6 fits in u8");
-    b[7] = u8::try_from((v >> 56) & 0xff).expect("byte 7 fits in u8");
+    b[0] = (v & 0xff) as u8;
+    b[1] = ((v >> 8) & 0xff) as u8;
+    b[2] = ((v >> 16) & 0xff) as u8;
+    b[3] = ((v >> 24) & 0xff) as u8;
+    b[4] = ((v >> 32) & 0xff) as u8;
+    b[5] = ((v >> 40) & 0xff) as u8;
+    b[6] = ((v >> 48) & 0xff) as u8;
+    b[7] = ((v >> 56) & 0xff) as u8;
 }
 
 /// Load a `Gf` value from 2 bytes (little-endian).
@@ -69,8 +74,8 @@ pub(crate) fn load_gf(b: &[u8]) -> Gf {
 
 /// Store a `Gf` value as 2 bytes (little-endian).
 pub(crate) fn store_gf(b: &mut [u8], v: Gf) {
-    b[0] = u8::try_from(v & 0xff).expect("gf low byte fits in u8");
-    b[1] = u8::try_from((v >> 8) & 0xff).expect("gf high byte fits in u8");
+    b[0] = (v & 0xff) as u8;
+    b[1] = ((v >> 8) & 0xff) as u8;
 }
 
 /// Load a `u32` from 4 bytes (little-endian).
@@ -81,7 +86,7 @@ pub(crate) fn load4(b: &[u8]) -> u32 {
 /// Store `i` bytes of `v` (little-endian) into `out`.
 fn store_i(out: &mut [u8], v: u64, i: usize) {
     for j in 0..i {
-        out[j] = u8::try_from((v >> (j * 8)) & 0xff).expect("byte fits in u8");
+        out[j] = ((v >> (j * 8)) & 0xff) as u8;
     }
 }
 
@@ -767,13 +772,13 @@ pub(crate) fn pk_gen(
     scalars_2x: &[[[u64; 13]; 2]; 5],
     _scalars_4x: &[[[u64; 13]; 4]; 6],
     powers: &[[u64; 13]; 128],
+    mut pivots: Option<&mut u64>,
 ) -> Result<(), crate::error::Error> {
     let nblocks_h = (SYS_N).div_ceil(64);
     let nblocks_i = (PK_NROWS).div_ceil(64);
     let tail = PK_NROWS % 64;
     let block_idx = if tail == 0 { nblocks_i } else { nblocks_i - 1 };
     let mut mat = vec![0u64; PK_NROWS * nblocks_h];
-    let mut ops = vec![0u64; PK_NROWS * nblocks_i];
     let mut irr_int = [[0u64; GFBITS]; 2];
     irr_load(&mut irr_int, irr);
     let mut eval = [[0u64; GFBITS]; 128];
@@ -811,13 +816,13 @@ pub(crate) fn pk_gen(
     for i in 0..(1 << GFBITS) {
         pi_out[i] = i16::try_from(list[i] & u64::from(GFMASK)).expect("masked value fits in i16");
     }
-    for j in 0..nblocks_i {
+    for j in 0..nblocks_h {
         for k in 0..GFBITS {
             mat[k * nblocks_h + j] = prod[j][k];
         }
     }
     for i in 1..SYS_T {
-        for j in 0..nblocks_i {
+        for j in 0..nblocks_h {
             let prod_j = prod[j];
             vec_mul(&mut prod[j], &prod_j, &consts[j]);
             for k in 0..GFBITS {
@@ -825,78 +830,50 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    for i in 0..PK_NROWS {
-        ops[i * nblocks_i + (i / 64)] = 1u64 << (i % 64);
-    }
-    let column = if tail != 0 {
-        let mut col = vec![0u64; PK_NROWS];
-        for i in 0..PK_NROWS {
-            col[i] = mat[i * nblocks_h + block_idx];
-        }
-        Some(col)
-    } else {
-        None
-    };
+
     for row in 0..PK_NROWS {
+        if row == PK_NROWS - 32 {
+            if let Some(piv) = pivots.as_deref_mut() {
+                *piv = mov_columns(&mut mat, nblocks_h, PK_NROWS, pi_out)
+                    .map_err(|_| crate::error::Error::KeygenFailed)?;
+            }
+        }
         let i = row >> 6;
         let j = row & 63;
         for k in (row + 1)..PK_NROWS {
-            let bit = (mat[row * nblocks_h + i] >> j) & 1;
-            let mask = bit.wrapping_sub(1);
-            for c in 0..nblocks_i {
+            let bit = ((mat[row * nblocks_h + i] ^ mat[k * nblocks_h + i]) >> j) & 1;
+            let mask = 0u64.wrapping_sub(bit);
+            for c in 0..nblocks_h {
                 mat[row * nblocks_h + c] ^= mat[k * nblocks_h + c] & mask;
-                ops[row * nblocks_i + c] ^= ops[k * nblocks_i + c] & mask;
             }
         }
         let mask = (mat[row * nblocks_h + i] >> j) & 1;
         if mask == 0 {
             return Err(crate::error::Error::KeygenFailed);
         }
-        for k in (row + 1)..PK_NROWS {
-            let mask2 = (mat[k * nblocks_h + i] >> j) & 1;
-            let neg_mask = 0u64.wrapping_sub(mask2);
-            for c in 0..nblocks_i {
-                mat[k * nblocks_h + c] ^= mat[row * nblocks_h + c] & neg_mask;
-                ops[k * nblocks_i + c] ^= ops[row * nblocks_i + c] & neg_mask;
+        for k in 0..PK_NROWS {
+            if k != row {
+                let mask2 = (mat[k * nblocks_h + i] >> j) & 1;
+                let neg_mask = 0u64.wrapping_sub(mask2);
+                for c in 0..nblocks_h {
+                    mat[k * nblocks_h + c] ^= mat[row * nblocks_h + c] & neg_mask;
+                }
             }
         }
     }
-    for row in (0..PK_NROWS).rev() {
-        for k in 0..row {
-            let mask = 0u64.wrapping_sub((mat[k * nblocks_h + (row / 64)] >> (row % 64)) & 1);
-            for c in 0..nblocks_i {
-                ops[k * nblocks_i + c] ^= ops[row * nblocks_i + c] & mask;
-            }
-        }
-    }
-    for j in nblocks_i..nblocks_h {
-        for k in 0..GFBITS {
-            mat[k * nblocks_h + j] = prod[j][k];
-        }
-    }
-    for i in 1..SYS_T {
-        for j in nblocks_i..nblocks_h {
-            let prod_j = prod[j];
-            vec_mul(&mut prod[j], &prod_j, &consts[j]);
-            for k in 0..GFBITS {
-                mat[(i * GFBITS + k) * nblocks_h + j] = prod[j][k];
-            }
-        }
-    }
-    if let Some(ref column) = column {
-        for i in 0..PK_NROWS {
-            mat[i * nblocks_h + block_idx] = column[i];
-        }
+    let last_word = nblocks_h - 1;
+    let valid_last = if SYS_N % 64 == 0 {
+        u64::MAX
+    } else {
+        (1u64 << (SYS_N % 64)) - 1
+    };
+    for row in 0..PK_NROWS {
+        mat[row * nblocks_h + last_word] &= valid_last;
     }
     pk.clear();
+    let out_shift = tail % 64;
     for row in 0..PK_NROWS {
-        let mut one_row = vec![0u64; nblocks_h];
-        for c in 0..PK_NROWS {
-            let mask = 0u64.wrapping_sub((ops[row * nblocks_i + (c >> 6)] >> (c & 63)) & 1);
-            for k in block_idx..nblocks_h {
-                one_row[k] ^= mat[c * nblocks_h + k] & mask;
-            }
-        }
+        let one_row = &mat[row * nblocks_h..(row + 1) * nblocks_h];
         if tail == 0 {
             for k in block_idx..nblocks_h - 1 {
                 pk.extend_from_slice(&one_row[k].to_le_bytes());
@@ -912,10 +889,11 @@ pub(crate) fn pk_gen(
             }
         } else {
             for k in block_idx..nblocks_h - 1 {
-                let shifted = (one_row[k] >> tail) | (one_row[k + 1] << (64 - tail));
+                let shifted =
+                    (one_row[k] >> (out_shift & 63)) | (one_row[k + 1] << ((64 - out_shift) & 63));
                 pk.extend_from_slice(&shifted.to_le_bytes());
             }
-            let last = one_row[nblocks_h - 1] >> tail;
+            let last = one_row[nblocks_h - 1] >> (out_shift & 63);
             let rem = PK_ROW_BYTES % 8;
             if rem != 0 {
                 let pk_len = pk.len();
@@ -1033,7 +1011,7 @@ fn controlbits_layer(p: &mut [i16], cb: &[u8], s: usize, n: usize) {
 
 fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usize, n: usize) {
     if w == 1 {
-        out[pos >> 3] ^= u8::try_from(pi[0] & 1).expect("lsb of i16 fits in u8") << (pos & 7);
+        out[pos >> 3] ^= ((pi[0] & 1) as u8) << (pos & 7);
         return;
     }
     let mut a = [0i32; 1 << GFBITS];
@@ -1113,7 +1091,7 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     let mut p = pos;
     for j in 0..(n / 2) {
         let x = 2 * j;
-        let fj = u8::try_from(b[x] & 1).expect("0 or 1 fits in u8");
+        let fj = (b[x] & 1) as u8;
         out[p >> 3] ^= fj << (p & 7);
         p += step;
     }
@@ -1133,7 +1111,7 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     p += (2 * w - 3) * step * (n / 2);
     for k in 0..(n / 2) {
         let y = 2 * k;
-        let lk = u8::try_from(b[y] & 1).expect("0 or 1 fits in u8");
+        let lk = (b[y] & 1) as u8;
         out[p >> 3] ^= lk << (p & 7);
         p += step;
         let ly = i32::try_from(y).expect("y fits in i32") + i32::from(lk);
@@ -1144,8 +1122,8 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     crate::sort::int32_sort(&mut a[..n]);
     let mut q = [0i16; 1 << GFBITS];
     for j in 0..(n / 2) {
-        q[j] = i16::try_from((a[2 * j] & 0xffff) >> 1).expect("fits in i16");
-        q[j + n / 2] = i16::try_from((a[2 * j + 1] & 0xffff) >> 1).expect("fits in i16");
+        q[j] = ((a[2 * j] & 0xffff) >> 1) as i16;
+        q[j + n / 2] = ((a[2 * j + 1] & 0xffff) >> 1) as i16;
     }
     let recurse_pos = pos + step * n / 2;
     cbrecursion_write(out, recurse_pos, step * 2, &q[..n / 2], w - 1, n / 2);

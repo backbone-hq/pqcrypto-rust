@@ -1,6 +1,7 @@
 //! ML-KEM parameter set definitions following FIPS 203.
 
-/// ML-KEM parameter set definitions following FIPS 203.
+/// Parameter set for an ML-KEM variant: module rank, CBD etas, and
+/// compression bit-lengths.
 pub trait Params {
     /// Module rank
     const K: usize;
@@ -13,9 +14,9 @@ pub trait Params {
     /// Bit-length of compressed v component
     const DV: usize;
     /// Public key size in bytes
-    const PK_SIZE: usize;
+    const PK_BYTES: usize;
     /// Ciphertext size in bytes
-    const CT_SIZE: usize;
+    const CT_BYTES: usize;
 }
 
 /// ML-KEM-512 (security category 1) parameter set.
@@ -27,8 +28,8 @@ impl Params for MLKEM512 {
     const ETA2: usize = 2;
     const DU: usize = 10;
     const DV: usize = 4;
-    const PK_SIZE: usize = 800;
-    const CT_SIZE: usize = 768;
+    const PK_BYTES: usize = 800;
+    const CT_BYTES: usize = 768;
 }
 
 /// ML-KEM-768 (security category 3) parameter set.
@@ -40,8 +41,8 @@ impl Params for MLKEM768 {
     const ETA2: usize = 2;
     const DU: usize = 10;
     const DV: usize = 4;
-    const PK_SIZE: usize = 1184;
-    const CT_SIZE: usize = 1088;
+    const PK_BYTES: usize = 1184;
+    const CT_BYTES: usize = 1088;
 }
 
 /// ML-KEM-1024 (security category 5) parameter set.
@@ -53,8 +54,8 @@ impl Params for MLKEM1024 {
     const ETA2: usize = 2;
     const DU: usize = 11;
     const DV: usize = 5;
-    const PK_SIZE: usize = 1568;
-    const CT_SIZE: usize = 1568;
+    const PK_BYTES: usize = 1568;
+    const CT_BYTES: usize = 1568;
 }
 
 /// Polynomial degree (N = 256 per FIPS 203).

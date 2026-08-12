@@ -1,5 +1,13 @@
-//! NTT operations using backend dispatch.
-//! Re-exports from the selected backend (soft or avx2).
+//! NTT operations for ML-KEM.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )
+)]
+//! Re-exports from the portable (`soft`) backend.
 
 #[cfg(test)]
 use crate::params::N;
@@ -122,6 +130,11 @@ fn mod_inv(x: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     use super::*;
 
     #[test]

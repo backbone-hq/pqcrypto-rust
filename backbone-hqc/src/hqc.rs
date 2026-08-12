@@ -45,7 +45,6 @@ pub(crate) fn keygen<P: Params>(
     for i in 0..P::VEC_N_SIZE_64 {
         s[i] ^= x[i];
     }
-
     parsing::hqc_public_key_to_string::<P>(pk, seed_ek, &s);
     parsing::hqc_secret_key_to_string::<P>(sk, pk, seed_dk, sigma, seed_kem);
 }
@@ -53,8 +52,16 @@ pub(crate) fn keygen<P: Params>(
 /// CPA encryption.
 /// Ciphertext: u = r1 + r2·h, v = m·G + r2·s + e
 pub(crate) fn encrypt<P: Params>(u: &mut [u64], v: &mut [u64], m: &[u8], theta: &[u8], pk: &[u8]) {
-    let mut rand = SecretVec::new(4 * (P::OMEGA_R * 2 + P::OMEGA_E));
-    kem::xof_fill(theta, &mut rand);
+    // Sample r2, e, r1 from the theta XOF with the reference's 8-byte-aligned
+    // consumption (`xof_get_bytes` squeezes ceil(n/8)·8 stream bytes per call
+    // and discards the padding).
+    let mut hash = Shake256::default();
+    hash.update(theta);
+    hash.update(&[kem::XOF_DOMAIN]);
+    let mut reader = hash.finalize_xof();
+    let r2_bytes = kem::xof_read_padded(&mut reader, 4 * P::OMEGA_R);
+    let e_bytes = kem::xof_read_padded(&mut reader, 4 * P::OMEGA_E);
+    let r1_bytes = kem::xof_read_padded(&mut reader, 4 * P::OMEGA_R);
 
     let mut h = vec![0u64; P::VEC_N_SIZE_64];
     let mut s = vec![0u64; P::VEC_N_SIZE_64];
@@ -66,11 +73,9 @@ pub(crate) fn encrypt<P: Params>(u: &mut [u64], v: &mut [u64], m: &[u8], theta: 
     let mut r1 = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
     let mut r2 = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
     let mut e = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
-    vector::vect_set_random_fixed_weight::<P>(&rand[..4 * P::OMEGA_R], &mut r2, P::OMEGA_R);
-    let e_start = 4 * P::OMEGA_R;
-    let e_end = e_start + 4 * P::OMEGA_E;
-    vector::vect_set_random_fixed_weight::<P>(&rand[e_start..e_end], &mut e, P::OMEGA_E);
-    vector::vect_set_random_fixed_weight::<P>(&rand[e_end..], &mut r1, P::OMEGA_R);
+    vector::vect_set_random_fixed_weight::<P>(&r2_bytes, &mut r2, P::OMEGA_R);
+    vector::vect_set_random_fixed_weight::<P>(&e_bytes, &mut e, P::OMEGA_E);
+    vector::vect_set_random_fixed_weight::<P>(&r1_bytes, &mut r1, P::OMEGA_R);
 
     let mut tmp = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
     gf2x::vect_mul::<P>(&mut tmp, &r2, &h);
@@ -97,16 +102,16 @@ pub(crate) fn decrypt<P: Params>(m: &mut [u8], u: &[u64], v: &[u64], sk: &[u8]) 
     let seed_dk = &sk[P::PK_BYTES..P::PK_BYTES + P::SEED_BYTES];
     vector::vect_set_random_fixed_weight_keygen::<P>(seed_dk, &mut y);
 
-    let mut tmp = vec![0u64; P::VEC_N_SIZE_64];
-    gf2x::vect_mul::<P>(&mut tmp, &y, u);
+    let mut tmp = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
+    gf2x::vect_mul::<P>(tmp.as_mut(), &y, u);
 
-    let mut v_full = vec![0u64; P::VEC_N_SIZE_64];
+    let mut v_full = SecretVec::<u64>::new(P::VEC_N_SIZE_64);
     v_full[..P::VEC_N1N2_SIZE_64].copy_from_slice(&v[..P::VEC_N1N2_SIZE_64]);
     for i in 0..P::VEC_N_SIZE_64 {
         v_full[i] ^= tmp[i];
     }
 
-    codec::decode::<P>(m, &v_full);
+    codec::decode::<P>(m, v_full.as_ref());
 }
 
 #[cfg(test)]

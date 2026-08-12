@@ -1,3 +1,8 @@
+#![allow(clippy::cast_sign_loss)]
+//! GF(2^13) core for the McEliece 13-bit parameter sets.
+//!
+//! One of four in-sync copies — edit `gf13_460896.rs` and regenerate the
+//! siblings. All casts operate on bounded values.
 use crate::common::*;
 use crate::decode;
 use crate::vec_ops::gf13::*;
@@ -18,16 +23,18 @@ pub(crate) const CRYPTO_PUBLICKEYBYTES: usize = 1047319;
 pub(crate) const CRYPTO_SECRETKEYBYTES: usize = 13948;
 pub(crate) const CRYPTO_CIPHERTEXTBYTES: usize = 194;
 pub(crate) const CRYPTO_BYTES: usize = 32;
+
 /// No-op post-process step for the forward FFT (GFBITS=13 variant).
 fn fft_postprocess(_out: &mut [[Vec64; GFBITS]; 128], _powers: &[[u64; 13]; 128]) {}
+
+/// Hash `input` with SHAKE-256, writing the result into `output`.
 pub(crate) fn shake256_into(output: &mut [u8], input: &[u8]) {
     let mut x = sha3::Shake256::default();
     x.update(input);
     x.finalize_xof().read(output);
 }
-fn vec_copy(out: &mut [Vec64; GFBITS], inp: &[Vec64; GFBITS]) {
-    out.copy_from_slice(inp);
-}
+
+/// Load up to 8 bytes from `b` into a `u64` (little-endian).
 fn load8(b: &[u8]) -> u64 {
     let len = b.len();
     if len >= 8 {
@@ -47,31 +54,43 @@ fn load8(b: &[u8]) -> u64 {
         v
     }
 }
+
+/// Store a `u64` as 8 bytes in little-endian order.
 pub(crate) fn store8(b: &mut [u8], v: u64) {
-    b[0] = u8::try_from(v & 0xff).expect("store8: low byte masked");
-    b[1] = u8::try_from((v >> 8) & 0xff).expect("store8: byte 1 masked");
-    b[2] = u8::try_from((v >> 16) & 0xff).expect("store8: byte 2 masked");
-    b[3] = u8::try_from((v >> 24) & 0xff).expect("store8: byte 3 masked");
-    b[4] = u8::try_from((v >> 32) & 0xff).expect("store8: byte 4 masked");
-    b[5] = u8::try_from((v >> 40) & 0xff).expect("store8: byte 5 masked");
-    b[6] = u8::try_from((v >> 48) & 0xff).expect("store8: byte 6 masked");
-    b[7] = u8::try_from((v >> 56) & 0xff).expect("store8: byte 7 masked");
+    b[0] = (v & 0xff) as u8;
+    b[1] = ((v >> 8) & 0xff) as u8;
+    b[2] = ((v >> 16) & 0xff) as u8;
+    b[3] = ((v >> 24) & 0xff) as u8;
+    b[4] = ((v >> 32) & 0xff) as u8;
+    b[5] = ((v >> 40) & 0xff) as u8;
+    b[6] = ((v >> 48) & 0xff) as u8;
+    b[7] = ((v >> 56) & 0xff) as u8;
 }
+
+/// Load a `Gf` value from 2 bytes (little-endian).
 pub(crate) fn load_gf(b: &[u8]) -> Gf {
     u16::from(b[0]) | (u16::from(b[1]) << 8)
 }
+
+/// Store a `Gf` value as 2 bytes (little-endian).
 pub(crate) fn store_gf(b: &mut [u8], v: Gf) {
-    b[0] = u8::try_from(v & 0xff).expect("store_gf: low byte");
-    b[1] = u8::try_from((v >> 8) & 0xff).expect("store_gf: high byte");
+    b[0] = (v & 0xff) as u8;
+    b[1] = ((v >> 8) & 0xff) as u8;
 }
+
+/// Load a `u32` from 4 bytes (little-endian).
 pub(crate) fn load4(b: &[u8]) -> u32 {
     u32::from(b[0]) | (u32::from(b[1]) << 8) | (u32::from(b[2]) << 16) | (u32::from(b[3]) << 24)
 }
+
+/// Store `i` bytes of `v` (little-endian) into `out`.
 fn store_i(out: &mut [u8], v: u64, i: usize) {
     for j in 0..i {
-        out[j] = u8::try_from((v >> (j * 8)) & 0xff).expect("store_i: byte value");
+        out[j] = ((v >> (j * 8)) & 0xff) as u8;
     }
 }
+
+/// Radix-conversion step of the forward Gao-Mateer FFT.
 fn radix_conversions(inp: &mut [[Vec64; GFBITS]; 2], scalars_2x: &[[[u64; 13]; 2]; 5]) {
     const MASKS: [[u64; 2]; 5] = [
         [0x8888_8888_8888_8888, 0x4444_4444_4444_4444],
@@ -101,6 +120,8 @@ fn radix_conversions(inp: &mut [[Vec64; GFBITS]; 2], scalars_2x: &[[[u64; 13]; 2
         }
     }
 }
+
+/// In-place 64×64 bit-matrix transposition.
 fn transpose_64x64(out: &mut [u64; 64], input: &[u64; 64]) {
     const MASKS: [[u64; 2]; 6] = [
         [0x5555_5555_5555_5555, 0xAAAA_AAAA_AAAA_AAAA],
@@ -124,6 +145,8 @@ fn transpose_64x64(out: &mut [u64; 64], input: &[u64; 64]) {
         }
     }
 }
+
+/// Butterfly layers of the forward Gao-Mateer FFT.
 fn butterflies(
     out: &mut [[Vec64; GFBITS]; 128],
     inp: &mut [[Vec64; GFBITS]; 2],
@@ -308,6 +331,13 @@ fn butterflies(
         consts_ptr += s;
     }
 }
+
+/// Copy a bitsliced vector `[Vec64; GFBITS]` from `inp` to `out`.
+fn vec_copy(out: &mut [Vec64; GFBITS], inp: &[Vec64; GFBITS]) {
+    out.copy_from_slice(inp);
+}
+
+/// Forward Gao-Mateer FFT (128-point, GFBITS=13).
 pub(crate) fn fft(
     out: &mut [[Vec64; GFBITS]; 128],
     inp: &mut [[Vec64; GFBITS]; 2],
@@ -319,6 +349,8 @@ pub(crate) fn fft(
     butterflies(out, inp, consts);
     fft_postprocess(out, powers);
 }
+
+/// Benes network inner layer (horizontal-style bit manipulation).
 fn layer_in(data: &mut [u64; 128], bits: &[u64], lgs: usize) {
     let s = 1 << lgs;
     let mut bit = 0;
@@ -335,6 +367,8 @@ fn layer_in(data: &mut [u64; 128], bits: &[u64], lgs: usize) {
         }
     }
 }
+
+/// Benes network outer layer.
 fn layer_ex(data: &mut [u64; 128], bits: &[u64], lgs: usize) {
     let s = 1 << lgs;
     let mut bit = 0;
@@ -347,6 +381,8 @@ fn layer_ex(data: &mut [u64; 128], bits: &[u64], lgs: usize) {
         }
     }
 }
+
+/// Benes network routing for 128-element vectors.
 pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     let mut r_int_v = [0u64; 128];
     let mut r_int_h = [0u64; 128];
@@ -363,14 +399,18 @@ pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     transpose_64x64(
         (&mut rh0[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rv0[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rh0 has exactly 64 elements"),
+        (&rv0[..64])
+            .try_into()
+            .expect("rv0 has exactly 64 elements"),
     );
     transpose_64x64(
         (&mut rh1[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rv1[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rh1 has exactly 64 elements"),
+        (&rv1[..64])
+            .try_into()
+            .expect("rv1 has exactly 64 elements"),
     );
     for _iter in 0..=6 {
         for i in 0..64 {
@@ -387,14 +427,18 @@ pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     transpose_64x64(
         (&mut rv0[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rh0[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rv0 has exactly 64 elements"),
+        (&rh0[..64])
+            .try_into()
+            .expect("rh0 has exactly 64 elements"),
     );
     transpose_64x64(
         (&mut rv1[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rh1[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rv1 has exactly 64 elements"),
+        (&rh1[..64])
+            .try_into()
+            .expect("rh1 has exactly 64 elements"),
     );
     for _iter in 0..=5 {
         for i in 0..64 {
@@ -417,14 +461,18 @@ pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     transpose_64x64(
         (&mut rh0[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rv0[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rh0 has exactly 64 elements"),
+        (&rv0[..64])
+            .try_into()
+            .expect("rv0 has exactly 64 elements"),
     );
     transpose_64x64(
         (&mut rh1[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rv1[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rh1 has exactly 64 elements"),
+        (&rv1[..64])
+            .try_into()
+            .expect("rv1 has exactly 64 elements"),
     );
     for _iter in (0..=6).rev() {
         for i in 0..64 {
@@ -441,20 +489,26 @@ pub(crate) fn benes(r: &mut [u64; 128], bits: &[u8], rev: bool) {
     transpose_64x64(
         (&mut rv0[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rh0[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rv0 has exactly 64 elements"),
+        (&rh0[..64])
+            .try_into()
+            .expect("rh0 has exactly 64 elements"),
     );
     transpose_64x64(
         (&mut rv1[..64])
             .try_into()
-            .expect("slice to array ref fits"),
-        (&rh1[..64]).try_into().expect("slice to array ref fits"),
+            .expect("rv1 has exactly 64 elements"),
+        (&rh1[..64])
+            .try_into()
+            .expect("rh1 has exactly 64 elements"),
     );
     for i in 0..64 {
         r[i * 2] = r_int_v[i];
         r[i * 2 + 1] = r_int_v[i + 64];
     }
 }
+
+/// Load an irreducible Goppa polynomial from bytes into bitsliced 2-vector form.
 fn irr_load(out: &mut [[Vec64; GFBITS]; 2], input: &[u8]) {
     let mut irr = [0u16; SYS_T + 1];
     for i in 0..SYS_T {
@@ -476,7 +530,10 @@ fn irr_load(out: &mut [[Vec64; GFBITS]; 2], input: &[u8]) {
         out[1][i] = v1;
     }
 }
-pub(crate) fn support_gen(support: &mut [Gf; SYS_N], c: &[u8]) {
+
+/// Generate the field-element support from Benes control bits.
+pub(crate) fn support_gen(support: &mut [Gf], c: &[u8]) {
+    let sys_n = support.len();
     let mut l_full = [[0u64; 128]; GFBITS];
     for i in 0..(1 << GFBITS) {
         let a = bitrev(u16::try_from(i).expect("i < 2^13 fits in u16"));
@@ -490,7 +547,7 @@ pub(crate) fn support_gen(support: &mut [Gf; SYS_N], c: &[u8]) {
         benes(&mut data, c, false);
         row.copy_from_slice(&data);
     }
-    for i in 0..SYS_N {
+    for i in 0..sys_n {
         support[i] = 0;
         for j in (0..GFBITS).rev() {
             support[i] <<= 1;
@@ -498,6 +555,8 @@ pub(crate) fn support_gen(support: &mut [Gf; SYS_N], c: &[u8]) {
         }
     }
 }
+
+/// Bit-reverse a 13-bit value (used in support generation).
 fn bitrev(value: Gf) -> Gf {
     let mut x = value;
     x = ((x & 0x00ff) << 8) | ((x & 0xff00) >> 8);
@@ -506,9 +565,13 @@ fn bitrev(value: Gf) -> Gf {
     x = ((x & 0x5555) << 1) | ((x & 0xaaaa) >> 1);
     x >> 3
 }
+
+/// Multiply two field elements (GF(2^13) with Goppa polynomial).
 fn gf_mul(a: Gf, b: Gf) -> Gf {
     crate::gf::gf_mul::<13>(a, b)
 }
+
+/// Invert a field element in GF(2^13).
 fn gf_inv(den: Gf) -> Gf {
     let tmp_11 = gf_sqmul(den, den);
     let tmp_1111 = gf_sq2mul(tmp_11, tmp_11);
@@ -518,6 +581,8 @@ fn gf_inv(den: Gf) -> Gf {
     out = gf_sq2mul(out, tmp_1111);
     gf_sq(out)
 }
+
+/// Square a field element in GF(2^13).
 fn gf_sq(inp: Gf) -> Gf {
     const B: [u32; 4] = [0x5555_5555, 0x3333_3333, 0x0F0F_0F0F, 0x00FF_00FF];
     let mut x = u32::from(inp);
@@ -529,8 +594,10 @@ fn gf_sq(inp: Gf) -> Gf {
     x ^= (t >> 9) ^ (t >> 10) ^ (t >> 12) ^ (t >> 13);
     t = x & 0x007E000;
     x ^= (t >> 9) ^ (t >> 10) ^ (t >> 12) ^ (t >> 13);
-    u16::try_from(x & u32::from(GFMASK)).expect("gf_sq: result masked to GFMASK")
+    u16::try_from(x & u32::from(GFMASK)).expect("masked gf square fits in u16")
 }
+
+/// Double-width square (maps GF(2^13) → GF(2^13)).
 fn gf_sq2(inp: Gf) -> Gf {
     const B: [u64; 4] = [
         0x1111_1111_1111_1111,
@@ -553,20 +620,28 @@ fn gf_sq2(inp: Gf) -> Gf {
         let t = x & M[i];
         x ^= (t >> 9) ^ (t >> 10) ^ (t >> 12) ^ (t >> 13);
     }
-    u16::try_from(x & u64::from(GFMASK)).expect("gf_sq2: result masked to GFMASK")
+    u16::try_from(x & u64::from(GFMASK)).expect("masked gf_sq2 fits in u16")
 }
+
+/// Square then multiply: `gf_mul(gf_sq(inp), m)`.
 fn gf_sqmul(inp: Gf, m: Gf) -> Gf {
     gf_mul(gf_sq(inp), m)
 }
+
+/// Double-square then multiply: `gf_mul(gf_sq2(inp), m)`.
 fn gf_sq2mul(inp: Gf, m: Gf) -> Gf {
     gf_mul(gf_sq2(inp), m)
 }
+
+/// Test whether a field element is zero (returns GFMASK if zero, 0 otherwise).
 fn gf_iszero(a: Gf) -> Gf {
     let mut t = u32::from(a);
     t = t.wrapping_sub(1);
     t >>= 19;
-    u16::try_from(t).expect("gf_iszero: result is 0 or 1")
+    u16::try_from(t).expect("shift leaves 0 or GFMASK, fits in u16")
 }
+
+/// reducing modulo the Goppa polynomial.
 fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
     let mut prod = [0u16; SYS_T * 2 - 1];
     for i in 0..SYS_T {
@@ -604,6 +679,10 @@ fn gf_mul_poly(out: &mut [Gf; SYS_T], lhs: &[Gf; SYS_T], rhs: &[Gf; SYS_T]) {
     }
     out.copy_from_slice(&prod[..SYS_T]);
 }
+
+/// Generate the Goppa polynomial generator matrix.
+///
+/// Returns `true` if the polynomial is not invertible (singular matrix).
 pub(crate) fn genpoly_gen(out: &mut [Gf; SYS_T], f: &[Gf; SYS_T]) -> bool {
     let mut mat = [[0u16; SYS_T]; SYS_T + 1];
     mat[0][0] = 1;
@@ -641,6 +720,8 @@ pub(crate) fn genpoly_gen(out: &mut [Gf; SYS_T], f: &[Gf; SYS_T]) -> bool {
     out.copy_from_slice(&mat[SYS_T]);
     false
 }
+
+/// De-bitslice a 128-element array of `[Vec64; GFBITS]` back into plain `u64`.
 fn de_bitslicing(out: &mut [u64], inp: &[[Vec64; GFBITS]; 128]) {
     for item in out.iter_mut() {
         *item = 0;
@@ -654,6 +735,8 @@ fn de_bitslicing(out: &mut [u64], inp: &[[Vec64; GFBITS]; 128]) {
         }
     }
 }
+
+/// Convert a plain `u64` list into two bitsliced 128-element arrays.
 fn to_bitslicing_2x(
     out0: &mut [[Vec64; GFBITS]; 128],
     out1: &mut [[Vec64; GFBITS]; 128],
@@ -678,6 +761,8 @@ fn to_bitslicing_2x(
         }
     }
 }
+
+/// Generate the public key from a seed and permutation.
 pub(crate) fn pk_gen(
     pk: &mut Vec<u8>,
     irr: &[u8],
@@ -687,13 +772,13 @@ pub(crate) fn pk_gen(
     scalars_2x: &[[[u64; 13]; 2]; 5],
     _scalars_4x: &[[[u64; 13]; 4]; 6],
     powers: &[[u64; 13]; 128],
+    mut pivots: Option<&mut u64>,
 ) -> Result<(), crate::error::Error> {
     let nblocks_h = (SYS_N).div_ceil(64);
     let nblocks_i = (PK_NROWS).div_ceil(64);
     let tail = PK_NROWS % 64;
     let block_idx = if tail == 0 { nblocks_i } else { nblocks_i - 1 };
     let mut mat = vec![0u64; PK_NROWS * nblocks_h];
-    let mut ops = vec![0u64; PK_NROWS * nblocks_i];
     let mut irr_int = [[0u64; GFBITS]; 2];
     irr_load(&mut irr_int, irr);
     let mut eval = [[0u64; GFBITS]; 128];
@@ -729,15 +814,15 @@ pub(crate) fn pk_gen(
     let mut consts = [[0u64; GFBITS]; 128];
     to_bitslicing_2x(&mut consts, &mut prod, &list);
     for i in 0..(1 << GFBITS) {
-        pi_out[i] = i16::try_from(list[i] & u64::from(GFMASK)).expect("GFMASK fits in i16");
+        pi_out[i] = i16::try_from(list[i] & u64::from(GFMASK)).expect("masked value fits in i16");
     }
-    for j in 0..nblocks_i {
+    for j in 0..nblocks_h {
         for k in 0..GFBITS {
             mat[k * nblocks_h + j] = prod[j][k];
         }
     }
     for i in 1..SYS_T {
-        for j in 0..nblocks_i {
+        for j in 0..nblocks_h {
             let prod_j = prod[j];
             vec_mul(&mut prod[j], &prod_j, &consts[j]);
             for k in 0..GFBITS {
@@ -745,78 +830,50 @@ pub(crate) fn pk_gen(
             }
         }
     }
-    for i in 0..PK_NROWS {
-        ops[i * nblocks_i + (i / 64)] = 1u64 << (i % 64);
-    }
-    let column = if tail != 0 {
-        let mut col = vec![0u64; PK_NROWS];
-        for i in 0..PK_NROWS {
-            col[i] = mat[i * nblocks_h + block_idx];
-        }
-        Some(col)
-    } else {
-        None
-    };
+
     for row in 0..PK_NROWS {
+        if row == PK_NROWS - 32 {
+            if let Some(piv) = pivots.as_deref_mut() {
+                *piv = mov_columns(&mut mat, nblocks_h, PK_NROWS, pi_out)
+                    .map_err(|_| crate::error::Error::KeygenFailed)?;
+            }
+        }
         let i = row >> 6;
         let j = row & 63;
         for k in (row + 1)..PK_NROWS {
-            let bit = (mat[row * nblocks_h + i] >> j) & 1;
-            let mask = bit.wrapping_sub(1);
-            for c in 0..nblocks_i {
+            let bit = ((mat[row * nblocks_h + i] ^ mat[k * nblocks_h + i]) >> j) & 1;
+            let mask = 0u64.wrapping_sub(bit);
+            for c in 0..nblocks_h {
                 mat[row * nblocks_h + c] ^= mat[k * nblocks_h + c] & mask;
-                ops[row * nblocks_i + c] ^= ops[k * nblocks_i + c] & mask;
             }
         }
         let mask = (mat[row * nblocks_h + i] >> j) & 1;
         if mask == 0 {
             return Err(crate::error::Error::KeygenFailed);
         }
-        for k in (row + 1)..PK_NROWS {
-            let mask2 = (mat[k * nblocks_h + i] >> j) & 1;
-            let neg_mask = 0u64.wrapping_sub(mask2);
-            for c in 0..nblocks_i {
-                mat[k * nblocks_h + c] ^= mat[row * nblocks_h + c] & neg_mask;
-                ops[k * nblocks_i + c] ^= ops[row * nblocks_i + c] & neg_mask;
+        for k in 0..PK_NROWS {
+            if k != row {
+                let mask2 = (mat[k * nblocks_h + i] >> j) & 1;
+                let neg_mask = 0u64.wrapping_sub(mask2);
+                for c in 0..nblocks_h {
+                    mat[k * nblocks_h + c] ^= mat[row * nblocks_h + c] & neg_mask;
+                }
             }
         }
     }
-    for row in (0..PK_NROWS).rev() {
-        for k in 0..row {
-            let mask = 0u64.wrapping_sub((mat[k * nblocks_h + (row / 64)] >> (row % 64)) & 1);
-            for c in 0..nblocks_i {
-                ops[k * nblocks_i + c] ^= ops[row * nblocks_i + c] & mask;
-            }
-        }
-    }
-    for j in nblocks_i..nblocks_h {
-        for k in 0..GFBITS {
-            mat[k * nblocks_h + j] = prod[j][k];
-        }
-    }
-    for i in 1..SYS_T {
-        for j in nblocks_i..nblocks_h {
-            let prod_j = prod[j];
-            vec_mul(&mut prod[j], &prod_j, &consts[j]);
-            for k in 0..GFBITS {
-                mat[(i * GFBITS + k) * nblocks_h + j] = prod[j][k];
-            }
-        }
-    }
-    if let Some(ref column) = column {
-        for i in 0..PK_NROWS {
-            mat[i * nblocks_h + block_idx] = column[i];
-        }
+    let last_word = nblocks_h - 1;
+    let valid_last = if SYS_N % 64 == 0 {
+        u64::MAX
+    } else {
+        (1u64 << (SYS_N % 64)) - 1
+    };
+    for row in 0..PK_NROWS {
+        mat[row * nblocks_h + last_word] &= valid_last;
     }
     pk.clear();
+    let out_shift = tail % 64;
     for row in 0..PK_NROWS {
-        let mut one_row = vec![0u64; nblocks_h];
-        for c in 0..PK_NROWS {
-            let mask = 0u64.wrapping_sub((ops[row * nblocks_i + (c >> 6)] >> (c & 63)) & 1);
-            for k in block_idx..nblocks_h {
-                one_row[k] ^= mat[c * nblocks_h + k] & mask;
-            }
-        }
+        let one_row = &mat[row * nblocks_h..(row + 1) * nblocks_h];
         if tail == 0 {
             for k in block_idx..nblocks_h - 1 {
                 pk.extend_from_slice(&one_row[k].to_le_bytes());
@@ -832,10 +889,11 @@ pub(crate) fn pk_gen(
             }
         } else {
             for k in block_idx..nblocks_h - 1 {
-                let shifted = (one_row[k] >> tail) | (one_row[k + 1] << (64 - tail));
+                let shifted =
+                    (one_row[k] >> (out_shift & 63)) | (one_row[k + 1] << ((64 - out_shift) & 63));
                 pk.extend_from_slice(&shifted.to_le_bytes());
             }
-            let last = one_row[nblocks_h - 1] >> tail;
+            let last = one_row[nblocks_h - 1] >> (out_shift & 63);
             let rem = PK_ROW_BYTES % 8;
             if rem != 0 {
                 let pk_len = pk.len();
@@ -850,6 +908,8 @@ pub(crate) fn pk_gen(
     pk.truncate(expected);
     Ok(())
 }
+
+/// Compute the syndrome from the public key and error vector.
 #[must_use]
 pub(crate) fn syndrome_from_public_key(pk: &[u8], e: &[u8]) -> [u8; SYND_BYTES] {
     let mut s = [0u8; SYND_BYTES];
@@ -908,6 +968,10 @@ pub(crate) fn syndrome_from_public_key(pk: &[u8], e: &[u8]) -> [u8; SYND_BYTES] 
     }
     s
 }
+
+/// Decrypt the error vector from a ciphertext using the secret key.
+///
+/// Returns the error vector (as bytes) and a validity flag.
 #[must_use]
 pub(crate) fn decrypt_error_vector(sk: &[u8], c: &[u8]) -> ([u8; SYS_N / 8], u8) {
     let irr_start = 40usize;
@@ -920,13 +984,15 @@ pub(crate) fn decrypt_error_vector(sk: &[u8], c: &[u8]) -> ([u8; SYS_N / 8], u8)
     g[SYS_T] = 1;
     let cond = &sk[cond_start..cond_start + COND_BYTES];
     let mut support = SecretArray::<u16, SYS_N>::new();
-    support_gen(&mut support, cond);
+    support_gen(support.as_mut(), cond);
     let (e_vec, valid) =
         decode::decrypt_with_support::<GFBITS>(g.as_ref(), support.as_ref(), c, SYS_N, SYS_T);
     let mut e = [0u8; SYS_N / 8];
     e.copy_from_slice(&e_vec);
     (e, valid)
 }
+
+/// Apply one layer of control bits to the partial permutation `p`.
 fn controlbits_layer(p: &mut [i16], cb: &[u8], s: usize, n: usize) {
     let stride = 1usize << s;
     let mut index = 0usize;
@@ -942,17 +1008,17 @@ fn controlbits_layer(p: &mut [i16], cb: &[u8], s: usize, n: usize) {
         }
     }
 }
+
 fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usize, n: usize) {
     if w == 1 {
-        let byte_val = u8::try_from(pi[0] & 0xff).expect("cbrecursion_write: pi[0] low byte");
-        out[pos >> 3] ^= byte_val << (pos & 7);
+        out[pos >> 3] ^= ((pi[0] & 1) as u8) << (pos & 7);
         return;
     }
     let mut a = [0i32; 1 << GFBITS];
     let mut b = [0i32; 1 << GFBITS];
     for x in 0..n {
-        let pi_x1 = u16::try_from(pi[x ^ 1]).expect("cbrecursion_write: pi[x^1] >= 0");
-        a[x] = (i32::from(pi[x] ^ 1) << 16) | i32::from(pi_x1);
+        a[x] = (i32::from(pi[x] ^ 1) << 16)
+            | i32::from(u16::try_from(pi[x ^ 1]).expect("non-negative i16 fits in u16"));
     }
     crate::sort::int32_sort(&mut a[..n]);
     for x in 0..n {
@@ -1025,7 +1091,7 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     let mut p = pos;
     for j in 0..(n / 2) {
         let x = 2 * j;
-        let fj = u8::try_from(b[x] & 1).expect("b[x] & 1 is 0 or 1");
+        let fj = (b[x] & 1) as u8;
         out[p >> 3] ^= fj << (p & 7);
         p += step;
     }
@@ -1045,7 +1111,7 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     p += (2 * w - 3) * step * (n / 2);
     for k in 0..(n / 2) {
         let y = 2 * k;
-        let lk = u8::try_from(b[y] & 1).expect("b[y] & 1 is 0 or 1");
+        let lk = (b[y] & 1) as u8;
         out[p >> 3] ^= lk << (p & 7);
         p += step;
         let ly = i32::try_from(y).expect("y fits in i32") + i32::from(lk);
@@ -1056,15 +1122,15 @@ fn cbrecursion_write(out: &mut [u8], pos: usize, step: usize, pi: &[i16], w: usi
     crate::sort::int32_sort(&mut a[..n]);
     let mut q = [0i16; 1 << GFBITS];
     for j in 0..(n / 2) {
-        q[j] =
-            i16::try_from((a[2 * j] & 0xffff) >> 1).expect("cbrecursion_write: q[j] fits in i16");
-        q[j + n / 2] = i16::try_from((a[2 * j + 1] & 0xffff) >> 1)
-            .expect("cbrecursion_write: q[j+n/2] fits in i16");
+        q[j] = ((a[2 * j] & 0xffff) >> 1) as i16;
+        q[j + n / 2] = ((a[2 * j + 1] & 0xffff) >> 1) as i16;
     }
     let recurse_pos = pos + step * n / 2;
     cbrecursion_write(out, recurse_pos, step * 2, &q[..n / 2], w - 1, n / 2);
     cbrecursion_write(out, recurse_pos + step, step * 2, &q[n / 2..], w - 1, n / 2);
 }
+
+/// Generate the Benes control bits for a permutation.
 pub(crate) fn controlbits_from_permutation(
     out: &mut [u8],
     pi: &[i16],
@@ -1077,7 +1143,7 @@ pub(crate) fn controlbits_from_permutation(
         cbrecursion_write(out, 0, 1, pi, GFBITS, n);
         let mut pi_test = [0i16; 1 << GFBITS];
         for (i, slot) in pi_test.iter_mut().enumerate() {
-            *slot = i16::try_from(i).expect("i < 8192 fits in i16");
+            *slot = i16::try_from(i).expect("i < 2^13 fits in i16");
         }
         let mut ptr = 0usize;
         for i in 0..GFBITS {

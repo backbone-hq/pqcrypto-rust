@@ -1,15 +1,12 @@
 //! ML-KEM (FIPS 203) implementation: Module-Lattice-Based Key Encapsulation Mechanism.
 #![no_std]
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss
-)]
+#![deny(missing_docs)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
+pub use rand_core;
 pub(crate) mod backends;
 pub mod error;
 pub(crate) mod field;
@@ -24,4 +21,6 @@ pub(crate) mod poly;
 pub(crate) mod sampling;
 
 #[cfg(test)]
-mod tests;
+mod kats;
+#[cfg(test)]
+mod transcript;

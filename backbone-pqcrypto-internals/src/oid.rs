@@ -12,20 +12,31 @@
 ///
 /// All OIDs are under the NIST hash algorithm arc
 /// `2.16.840.1.101.3.4.2`.
-#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HashAlgorithm {
+    /// SHA-224.
     Sha224,
+    /// SHA-256.
     Sha256,
+    /// SHA-384.
     Sha384,
+    /// SHA-512.
     Sha512,
+    /// SHA-512/224.
     Sha512_224,
+    /// SHA-512/256.
     Sha512_256,
+    /// SHA3-224.
     Sha3_224,
+    /// SHA3-256.
     Sha3_256,
+    /// SHA3-384.
     Sha3_384,
+    /// SHA3-512.
     Sha3_512,
+    /// SHAKE-128.
     Shake128,
+    /// SHAKE-256.
     Shake256,
 }
 

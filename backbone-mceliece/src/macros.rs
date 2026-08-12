@@ -1,54 +1,60 @@
 /// Define a typed KEM variant module for Classic McEliece.
 ///
 /// Generates `PublicKey`, `SecretKey`, and `Encapsulation` structs
-/// along with `keygen`, `keypair_from_seed`, `encaps`, `encaps_deterministic`,
+/// along with `keygen`, `keygen_with_rng`, `encaps`, `encaps_with_rng`,
 /// and `decaps` functions that delegate to the shared `$core` module.
 ///
 /// # Parameters
 /// - `$params`: marker struct name (e.g., `McEliece348864`)
 /// - `$core`: shared module crate path (e.g., `gf12` or `gf13`)
 /// - `$doc_variant`: doc string for the variant
-/// - `$doc_sec`: security level string
 ///
 /// Optional FFT table names (default: `FFT_CONSTS`, `FFT_POWERS`, `FFT_SCALARS`):
-/// - `fft_consts = $c`: name of the FFT_CONSTS table (e.g., `FFT_CONSTS`)
-/// - `fft_powers = $p`: name of the FFT_POWERS table
-/// - `fft_scalars = $s`: name of the FFT_SCALARS table
-///
-/// For GF13 variants, pass GF13-specific FFT table names:
-/// `define_variant!(..., fft_consts = FFT_CONSTS, fft_powers = FFT_SCALARS_2X, fft_scalars = FFT_SCALARS_4X,
-///     fft_extra = FFT_POWERS)`
-/// (GF12 provides 3 FFT tables; GF13 provides 4 — consts, scalars_2x, scalars_4x, powers;
-///  `$core::pk_gen` resolves the correct types and count).
+/// - `fft_consts = $c`, `fft_powers = $p`, `fft_scalars = $s` (per-variant names)
+/// - GF13 variants additionally pass `fft_extra = FFT_POWERS` (4 tables vs 3)
 ///
 /// # Required items in scope
-/// - FFT table constants (from the `include!()`)
 /// - `$core` module must export: `syndrome_from_public_key`, `decrypt_error_vector`,
 ///   `pk_gen`, `genpoly_gen`, `controlbits_from_permutation`, `load_gf`, `store_gf`,
 ///   `load4`, `store8`, `shake256_into`, all constants (GFBITS, SYS_N, SYS_T, etc.)
 #[macro_export]
 macro_rules! define_variant {
-    ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr) => {
-        $crate::define_variant!($params, $core, $doc_variant, $doc_sec,
+    ($params:ident, $core:ident, $doc_variant:expr) => {
+        $crate::define_variant!($params, $core, $doc_variant,
             fft_consts = FFT_CONSTS, fft_powers = FFT_POWERS, fft_scalars = FFT_SCALARS);
     };
-    ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
+    ($params:ident, $core:ident, $doc_variant:expr,
      fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident) => {
-        $crate::define_variant!(@body $params, $core, $doc_variant, $doc_sec,
-            $consts, $powers, $scalars);
+        $crate::define_variant!(@body $params, $core, $doc_variant,
+            $consts, $powers, $scalars, false);
     };
-    ($params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
+    ($params:ident, $core:ident, $doc_variant:expr,
+     fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident,
+     fast = true) => {
+        $crate::define_variant!(@body $params, $core, $doc_variant,
+            $consts, $powers, $scalars, true);
+    };
+    ($params:ident, $core:ident, $doc_variant:expr,
      fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident,
      fft_extra = $extra:ident) => {
-        $crate::define_variant!(@body $params, $core, $doc_variant, $doc_sec,
-            $consts, $powers, $scalars, $extra);
+        $crate::define_variant!(@body $params, $core, $doc_variant,
+            $consts, $powers, $scalars, false, $extra);
     };
-    (@body $params:ident, $core:ident, $doc_variant:expr, $doc_sec:expr,
-     $consts:ident, $powers:ident, $scalars:ident $(, $extra:ident)?) => {
+    ($params:ident, $core:ident, $doc_variant:expr,
+     fft_consts = $consts:ident, fft_powers = $powers:ident, fft_scalars = $scalars:ident,
+     fft_extra = $extra:ident, fast = true) => {
+        $crate::define_variant!(@body $params, $core, $doc_variant,
+            $consts, $powers, $scalars, true, $extra);
+    };
+    (@body $params:ident, $core:ident, $doc_variant:expr,
+     $consts:ident, $powers:ident, $scalars:ident, $fast:tt $(, $extra:ident)?) => {
         use alloc::vec::Vec;
+        use backbone_pqcrypto_internals::nist_seed_expander::NistSeedExpander;
         use backbone_pqcrypto_internals::secret::{SecretArray, SecretVec};
-        #[cfg(feature = "zeroize")]
-        use zeroize::Zeroize;
+        use $crate::error::Error;
+        use $crate::rand_core::CryptoRngCore;
+
+                use zeroize::Zeroize;
 
         const CRYPTO_PUBLICKEYBYTES: usize = $core::CRYPTO_PUBLICKEYBYTES;
         const CRYPTO_SECRETKEYBYTES: usize = $core::CRYPTO_SECRETKEYBYTES;
@@ -65,15 +71,16 @@ macro_rules! define_variant {
 
         /// Classic McEliece public key.
         #[doc = concat!($doc_variant, " public key.")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct PublicKey {
+            #[doc = concat!("Raw ", $doc_variant, " public key bytes.")]
             pub pk: Vec<u8>,
         }
 
         /// Classic McEliece secret key.
         #[doc = concat!($doc_variant, " secret key.")]
-        #[cfg_attr(feature = "zeroize", derive(Zeroize))]
-        #[cfg_attr(feature = "zeroize", zeroize(drop))]
+        #[derive(Zeroize)]
+        #[zeroize(drop)]
         pub struct SecretKey {
             sk: Vec<u8>,
         }
@@ -87,24 +94,31 @@ macro_rules! define_variant {
         }
 
         /// Result of a successful encapsulation.
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, PartialEq, Eq, Zeroize)]
+        #[zeroize(drop)]
         pub struct Encapsulation {
-            pub shared_secret: [u8; 32],
+            /// Shared secret (32 bytes).
+            pub shared_secret: [u8; CRYPTO_BYTES],
+            #[doc = concat!("Ciphertext for ", $doc_variant, ".")]
             pub ciphertext: Vec<u8>,
         }
 
+        impl core::fmt::Debug for Encapsulation {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct("Encapsulation")
+                    .field("shared_secret", &"[REDACTED]")
+                    .field("ciphertext", &self.ciphertext)
+                    .finish()
+            }
+        }
 
-        /// Generate an error vector of weight `SYS_T` from a 32-byte seed.
-        fn gen_e_from_seed(seed32: [u8; 32]) -> [u8; SYS_N / 8] {
-            let mut buf = [0u8; SYS_T * 2 * 2];
-            let mut domain = [0u8; 40];
-            domain[..32].copy_from_slice(&seed32);
-            let mut counter = 0u64;
 
+        fn gen_e_from_drbg(drbg: &mut NistSeedExpander) -> [u8; SYS_N / 8] {
+            let direct = SYS_N == (1 << GFBITS);
             loop {
-                domain[32..40].copy_from_slice(&counter.to_le_bytes());
-                counter = counter.wrapping_add(1);
-                $core::shake256_into(&mut buf, &domain);
+                let bytes_needed = if direct { SYS_T * 2 } else { SYS_T * 2 * 2 };
+                let mut buf = SecretVec::<u8>::new(bytes_needed);
+                drbg.fill_bytes(buf.as_mut());
 
                 let mut positions = [0u16; SYS_T];
                 let mut count = 0usize;
@@ -113,7 +127,7 @@ macro_rules! define_variant {
                         break;
                     }
                     let candidate = $core::load_gf(chunk) & GFMASK;
-                    if (candidate as usize) < SYS_N {
+                    if direct || (candidate as usize) < SYS_N {
                         positions[count] = candidate;
                         count += 1;
                     }
@@ -153,31 +167,32 @@ macro_rules! define_variant {
         }
 
         #[must_use]
-        fn encaps_from_seed_bytes(pk: &[u8], seed32: [u8; 32]) -> Encapsulation {
-            let e = gen_e_from_seed(seed32);
+        fn encaps_from_drbg(pk: &[u8], drbg: &mut NistSeedExpander) -> Encapsulation {
+            let e = gen_e_from_drbg(drbg);
             let ciphertext = $core::syndrome_from_public_key(pk, &e).to_vec();
-            let mut preimage = Vec::with_capacity(1 + SYS_N / 8 + SYND_BYTES);
-            preimage.push(1u8);
-            preimage.extend_from_slice(&e);
-            preimage.extend_from_slice(&ciphertext);
-            let shared_secret = shake256_32(&preimage);
+            // Zeroizing preimage: it contains the secret error vector e.
+            let mut preimage = SecretVec::<u8>::new(1 + SYS_N / 8 + SYND_BYTES);
+            preimage[0] = 1;
+            preimage[1..1 + SYS_N / 8].copy_from_slice(&e);
+            preimage[1 + SYS_N / 8..].copy_from_slice(&ciphertext);
+            let shared_secret = shake256_32(preimage.as_ref());
             Encapsulation {
                 ciphertext,
                 shared_secret,
             }
         }
 
-        fn decaps_bytes(sk: &[u8], ct: &[u8]) -> Result<[u8; CRYPTO_BYTES], $crate::error::Error> {
+        fn decaps_bytes(sk: &[u8], ciphertext: &[u8]) -> Result<[u8; CRYPTO_BYTES], Error> {
             if sk.len() != CRYPTO_SECRETKEYBYTES {
-                return Err($crate::error::Error::InvalidSecretKeyLength);
+                return Err(Error::InvalidSecretKeyLength);
             }
-            if ct.len() != CRYPTO_CIPHERTEXTBYTES {
-                return Err($crate::error::Error::InvalidCiphertextLength);
+            if ciphertext.len() != CRYPTO_CIPHERTEXTBYTES {
+                return Err(Error::InvalidCiphertextLength);
             }
 
             let fallback_s =
                 &sk[40 + IRR_BYTES + COND_BYTES..40 + IRR_BYTES + COND_BYTES + SYS_N / 8];
-            let (e_arr, valid) = $core::decrypt_error_vector(sk, ct);
+            let (e_arr, valid) = $core::decrypt_error_vector(sk, ciphertext);
             let e = SecretArray::from_array(e_arr);
 
             let valid_choice = subtle::Choice::from(valid & 1);
@@ -191,17 +206,18 @@ macro_rules! define_variant {
             }
 
             let prefix = valid & 1;
-            let mut preimage = Vec::with_capacity(1 + SYS_N / 8 + SYND_BYTES);
-            preimage.push(prefix);
-            preimage.extend_from_slice(&chosen);
-            preimage.extend_from_slice(ct);
-            let shared = shake256_32(&preimage);
+            // Zeroizing preimage: it contains the secret error vector (chosen).
+            let mut preimage = SecretVec::<u8>::new(1 + SYS_N / 8 + SYND_BYTES);
+            preimage[0] = prefix;
+            preimage[1..1 + SYS_N / 8].copy_from_slice(&chosen);
+            preimage[1 + SYS_N / 8..].copy_from_slice(ciphertext);
+            let shared = shake256_32(preimage.as_ref());
 
             Ok(shared)
         }
 
 
-        fn keypair_from_seed_bytes(seed32: [u8; 32]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
+        fn keypair_from_seed_bytes(seed32: [u8; 32]) -> Result<(PublicKey, SecretKey), Error> {
             let mut seed = SecretArray::<u8, 33>::new();
             seed[0] = 64;
             seed.as_mut()[1..33].copy_from_slice(&seed32);
@@ -212,7 +228,7 @@ macro_rules! define_variant {
             for _attempt in 0..1024 {
                 $core::shake256_into(&mut r, seed.as_ref());
 
-                let mut secret_key = alloc::vec![0u8; CRYPTO_SECRETKEYBYTES];
+                let mut secret_key = zeroize::Zeroizing::new(alloc::vec![0u8; CRYPTO_SECRETKEYBYTES]);
                 secret_key[..32].copy_from_slice(&seed.as_ref()[1..]);
                 seed.as_mut()[1..].copy_from_slice(&r[expand_len - 32..]);
 
@@ -245,6 +261,12 @@ macro_rules! define_variant {
                 let mut pi = SecretArray::<i16, { 1 << GFBITS }>::new();
 
                 let mut public_key = Vec::with_capacity(CRYPTO_PUBLICKEYBYTES);
+                let mut pivots = 0u64;
+                let pivot_arg = if $fast {
+                    Some(&mut pivots)
+                } else {
+                    None
+                };
                 if $core::pk_gen(
                     &mut public_key,
                     &secret_key[40..40 + IRR_BYTES],
@@ -256,6 +278,7 @@ macro_rules! define_variant {
                     $(
                         &$extra,
                     )*
+                    pivot_arg,
                 )
                 .is_err()
                 {
@@ -273,59 +296,90 @@ macro_rules! define_variant {
                 secret_key[cond_start + COND_BYTES..sk_ev_end]
                     .copy_from_slice(&r[rp..rp + SYS_N / 8]);
 
-                $core::store8(&mut secret_key[32..40], 0xFFFF_FFFF_FFFF_FFFF);
+                if $fast {
+                    $core::store8(&mut secret_key[32..40], pivots);
+                } else {
+                    $core::store8(&mut secret_key[32..40], 0xFFFF_FFFF);
+                }
 
-                return Ok((PublicKey { pk: public_key }, SecretKey { sk: secret_key }));
+                return Ok((PublicKey { pk: public_key }, SecretKey {
+                    sk: core::mem::take(secret_key.as_mut()),
+                }));
             }
 
-            Err($crate::error::Error::KeygenFailed)
+            Err(Error::KeygenFailed)
         }
 
 
-        ///
-        /// The seed is expanded via SHAKE-256. Any seed length is accepted.
-        #[doc = concat!("Generate an ", $doc_variant, " keypair deterministically from a seed.")]
-        pub fn keygen(seed: &[u8]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
-            use sha3::digest::{ExtendableOutput, Update, XofReader};
-            let mut shake = sha3::Shake256::default();
-            Update::update(&mut shake, seed);
-            let mut reader = shake.finalize_xof();
-            let mut seed32 = [0u8; 32];
-            reader.read(&mut seed32);
-            keypair_from_seed_bytes(seed32)
+        /// Key-generation seed length in bytes — the single source of truth for
+        /// both `keygen()` (system randomness) and `keygen_with_rng()` (caller RNG).
+        const KEYGEN_SEED_LEN: usize = 48;
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using system randomness.")]
+        pub fn keygen() -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = SecretArray::<u8, KEYGEN_SEED_LEN>::new();
+            getrandom::getrandom(seed.as_mut()).map_err(|_| Error::RngFailure)?;
+            keygen_from_seed(&seed)
         }
-        pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), $crate::error::Error> {
-            keygen(seed)
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using a caller-provided RNG.")]
+        #[doc = "Draws exactly `KEYGEN_SEED_LEN` bytes from `rng` and expands them via the "]
+        #[doc = "NIST AES-256-CTR DRBG, matching the official KAT harness."]
+        pub fn keygen_with_rng(
+            rng: &mut impl CryptoRngCore,
+        ) -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = SecretArray::<u8, KEYGEN_SEED_LEN>::new();
+            rng.try_fill_bytes(seed.as_mut()).map_err(|_| Error::RngFailure)?;
+            keygen_from_seed(&seed)
         }
+
+        fn keygen_from_seed(seed: &[u8; KEYGEN_SEED_LEN]) -> Result<(PublicKey, SecretKey), Error> {
+            let mut drbg = NistSeedExpander::new(seed);
+            let mut seed32 = SecretArray::<u8, 32>::new();
+            drbg.fill_bytes(seed32.as_mut());
+            keypair_from_seed_bytes(*seed32)
+        }
+
 
         #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key.")]
-        pub fn encaps(pk: &PublicKey) -> Result<Encapsulation, $crate::error::Error> {
-            let mut seed = [0u8; 32];
-            getrandom::getrandom(&mut seed).map_err(|_| $crate::error::Error::RngFailure)?;
-            encaps_deterministic(pk, &seed)
+        pub fn encaps(pk: &PublicKey) -> Result<Encapsulation, Error> {
+            if pk.pk.len() != CRYPTO_PUBLICKEYBYTES {
+                return Err(Error::InvalidKeyLength);
+            }
+            let mut seed = [0u8; 48];
+            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
+            encaps_from_seed(&pk.pk, &seed)
         }
 
-        #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key using a specific seed.")]
-        pub fn encaps_deterministic(
+        #[doc = concat!("Encapsulate a shared secret under an ", $doc_variant, " public key ")]
+        #[doc = "using a caller-provided RNG."]
+        #[doc = "Draws exactly 48 bytes from `rng` and expands them via the NIST "]
+        #[doc = "AES-256-CTR DRBG, matching the official KAT harness."]
+        pub fn encaps_with_rng(
             pk: &PublicKey,
-            seed: &[u8],
-        ) -> Result<Encapsulation, $crate::error::Error> {
+            rng: &mut impl CryptoRngCore,
+        ) -> Result<Encapsulation, Error> {
             if pk.pk.len() != CRYPTO_PUBLICKEYBYTES {
-                return Err($crate::error::Error::InvalidKeyLength);
+                return Err(Error::InvalidKeyLength);
             }
-            if seed.len() < 32 {
-                return Err($crate::error::Error::InvalidKeyLength);
-            }
-            let seed32: &[u8; 32] = &seed[..32].try_into().expect("length checked above");
-            Ok(encaps_from_seed_bytes(&pk.pk, *seed32))
+            let mut seed = [0u8; 48];
+            rng.try_fill_bytes(&mut seed).map_err(|_| Error::RngFailure)?;
+            encaps_from_seed(&pk.pk, &seed)
+        }
+
+        fn encaps_from_seed(pk_bytes: &[u8], seed: &[u8; 48]) -> Result<Encapsulation, Error> {
+            let mut drbg = NistSeedExpander::new(seed);
+            let mut skip = [0u8; 32];
+            drbg.fill_bytes(&mut skip);
+            Ok(encaps_from_drbg(pk_bytes, &mut drbg))
         }
 
         #[doc = concat!("Decapsulate a shared secret from a ciphertext using an ", $doc_variant, " secret key.")]
         pub fn decaps(
             sk: &SecretKey,
-            ct: &[u8],
-        ) -> Result<[u8; CRYPTO_BYTES], $crate::error::Error> {
-            decaps_bytes(sk.as_ref(), ct)
+            ciphertext: &[u8],
+        ) -> Result<[u8; CRYPTO_BYTES], Error> {
+            decaps_bytes(sk.as_ref(), ciphertext)
         }
 
         impl AsRef<[u8]> for PublicKey {
@@ -337,16 +391,14 @@ macro_rules! define_variant {
         impl PublicKey {
             /// Construct from raw bytes.
             #[doc = concat!("Construct an ", $doc_variant, " public key from raw bytes.")]
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, $crate::error::Error> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
                 if bytes.len() != CRYPTO_PUBLICKEYBYTES {
-                    return Err($crate::error::Error::InvalidKeyLength);
+                    return Err(Error::InvalidKeyLength);
                 }
                 Ok(Self { pk: bytes.to_vec() })
             }
 
-            pub fn as_bytes(&self) -> &[u8] {
-                &self.pk
-            }
+
         }
 
         impl AsRef<[u8]> for SecretKey {
@@ -357,15 +409,29 @@ macro_rules! define_variant {
 
         impl SecretKey {
             /// Construct from raw bytes.
-            pub fn from_bytes(bytes: &[u8]) -> Result<Self, $crate::error::Error> {
+            pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
                 if bytes.len() != CRYPTO_SECRETKEYBYTES {
-                    return Err($crate::error::Error::InvalidSecretKeyLength);
+                    return Err(Error::InvalidSecretKeyLength);
                 }
                 Ok(Self { sk: bytes.to_vec() })
             }
 
-            pub fn as_bytes(&self) -> &[u8] {
-                &self.sk
+
+        }
+
+        impl TryFrom<&[u8]> for PublicKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for SecretKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
             }
         }
 
@@ -373,12 +439,13 @@ macro_rules! define_variant {
         mod tests {
             use super::*;
             use alloc::vec;
+            use backbone_pqcrypto_internals::kat::FixedRng;
 
             #[test]
-            fn test_keygen_deterministic() {
-                let seed = [0x42u8; 32];
-                let (pk1, _) = keygen(&seed).expect("keygen 1");
-                let (pk2, _) = keygen(&seed).expect("keygen 2");
+            fn test_keygen_with_rng() {
+                let seed = vec![0x42u8; 48];
+                let (pk1, _) = keygen_with_rng(&mut FixedRng::new(seed.clone())).expect("keygen 1");
+                let (pk2, _) = keygen_with_rng(&mut FixedRng::new(seed)).expect("keygen 2");
                 let enc1 = encaps(&pk1).expect("encaps 1");
                 let enc2 = encaps(&pk2).expect("encaps 2");
                 assert_eq!(enc1.ciphertext.len(), enc2.ciphertext.len());
@@ -386,50 +453,65 @@ macro_rules! define_variant {
 
             #[test]
             fn test_keygen_different_seeds() {
-                let (pk1, _) = keygen(&[0x00u8; 32]).expect("keygen 1");
-                let (pk2, _) = keygen(&[0x01u8; 32]).expect("keygen 2");
+                let (pk1, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x00u8; 48])).expect("keygen 1");
+                let (pk2, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x01u8; 48])).expect("keygen 2");
                 assert_ne!(pk1.pk, pk2.pk, "different seeds should produce different keys");
             }
 
             #[test]
             fn test_keygen_roundtrip() {
-                let (pk, sk) = keygen(&[0x42u8; 32]).expect("keygen");
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(vec![0x42u8; 48])).expect("keygen");
                 assert_eq!(pk.as_ref().len(), CRYPTO_PUBLICKEYBYTES);
                 assert_eq!(sk.as_ref().len(), CRYPTO_SECRETKEYBYTES);
             }
 
             #[test]
             fn test_encaps_decaps_roundtrip() {
-                let (pk, sk) = keygen(&[255u8; 32]).expect("keygen");
-                let r_seed = [255u8; 32];
-                let enc = encaps_deterministic(&pk, &r_seed).expect("encaps");
+                let (pk, sk) =
+                    keygen_with_rng(&mut FixedRng::new(vec![255u8; 48])).expect("keygen");
+                let enc =
+                    encaps_with_rng(&pk, &mut FixedRng::new(vec![255u8; 48])).expect("encaps");
                 let ss = decaps(&sk, &enc.ciphertext).expect("decaps");
                 assert_eq!(enc.shared_secret, ss, "shared secrets must match");
             }
 
             #[test]
-            fn test_encaps_deterministic() {
-                let (pk, _) = keygen(&[0x42u8; 32]).expect("keygen");
-                let e_seed = [0x13u8; 32];
-                let enc1 = encaps_deterministic(&pk, &e_seed).expect("encaps 1");
-                let enc2 = encaps_deterministic(&pk, &e_seed).expect("encaps 2");
+            fn test_encaps_with_rng() {
+                let (pk, _) = keygen_with_rng(&mut FixedRng::new(vec![0x42u8; 48])).expect("keygen");
+                let enc1 =
+                    encaps_with_rng(&pk, &mut FixedRng::new(vec![0x13u8; 48])).expect("encaps 1");
+                let enc2 =
+                    encaps_with_rng(&pk, &mut FixedRng::new(vec![0x13u8; 48])).expect("encaps 2");
                 assert_eq!(enc1.ciphertext, enc2.ciphertext, "deterministic ciphertexts");
-                assert_eq!(enc1.shared_secret, enc2.shared_secret, "deterministic shared secrets");
+                assert_eq!(
+                    enc1.shared_secret,
+                    enc2.shared_secret,
+                    "deterministic shared secrets"
+                );
             }
 
             #[test]
             fn test_wrong_key_decaps_fails() {
-                let (pk1, _) = keygen(&[0x42u8; 32]).expect("keygen 1");
-                let (_, sk2) = keygen(&[0x99u8; 32]).expect("keygen 2");
-                let r_seed = [0x13u8; 32];
-                let enc = encaps_deterministic(&pk1, &r_seed).expect("encaps");
+                let (pk1, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x42u8; 48])).expect("keygen 1");
+                let (_, sk2) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x99u8; 48])).expect("keygen 2");
+                let enc =
+                    encaps_with_rng(&pk1, &mut FixedRng::new(vec![0x13u8; 48])).expect("encaps");
                 let ss = decaps(&sk2, &enc.ciphertext).expect("decaps with wrong key");
-                assert_ne!(enc.shared_secret, ss, "wrong key should produce different shared secret");
+                assert_ne!(
+                    enc.shared_secret,
+                    ss,
+                    "wrong key should produce different shared secret"
+                );
             }
 
             #[test]
             fn test_invalid_ciphertext_rejected() {
-                let (_, sk) = keygen(&[0x42u8; 32]).expect("keygen");
+                let (_, sk) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x42u8; 48])).expect("keygen");
                 let result = decaps(&sk, &[0u8; 1]);
                 assert!(result.is_err(), "short ciphertext should be rejected");
                 let bad_ct = vec![0u8; CRYPTO_CIPHERTEXTBYTES + 1];
@@ -439,7 +521,8 @@ macro_rules! define_variant {
 
             #[test]
             fn test_generated_ct_rejected() {
-                let (_, sk) = keygen(&[0x42u8; 32]).expect("keygen");
+                let (_, sk) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x42u8; 48])).expect("keygen");
                 let random_ct = [0xABu8; CRYPTO_CIPHERTEXTBYTES];
                 let result = decaps(&sk, &random_ct);
                 assert!(result.is_ok(), "random-ciphertext decaps must not panic");

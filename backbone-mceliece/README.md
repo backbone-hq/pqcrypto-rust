@@ -12,15 +12,22 @@ recommended).
 field-linear (FFT) key generation:
 
 | Variant | PK bytes | SK bytes | CT bytes |
-|---|---|---|---|
-| mceliece348864 / f | 261120 | 6452 / 6428 | 128 |
-| mceliece460896 / f | 524160 | 13568 / 13536 | 188 |
-| mceliece6688128 / f | 1044992 | 13892 / 13860 | 240 |
-| mceliece6960119 / f | 1047319 | 13924 / 13892 | 226 |
-| mceliece8192128 / f | 1357824 | 14120 / 14088 | 240 |
+| --- | --- | --- | --- |
+| mceliece348864 / f | 261120 | 6492 | 96 |
+| mceliece460896 / f | 524160 | 13608 | 156 |
+| mceliece6688128 / f | 1044992 | 13932 | 208 |
+| mceliece6960119 / f | 1047319 | 13948 | 194 |
+| mceliece8192128 / f | 1357824 | 14120 | 208 |
 
-All variants use GF(2) polynomial multiplication and support both
-SHAKE-256 and `#[cfg(feature = "drbg")]` AES-CTR DRBG keygen paths.
+Key generation expands the 48-byte seed via the NIST AES-256 CTR_DRBG
+seedexpander (SP 800-90A), matching the official reference KAT harness.
+
+## Validation
+
+KATs are the official NIST Round 4 submission vectors
+(mceliece-kat-20221023). Keygen, encaps, and decaps are validated
+byte-for-byte against them for all 10 variants. NIST ACVP vectors not
+available (Classic McEliece not yet standardized).
 
 ## Other Implementations
 

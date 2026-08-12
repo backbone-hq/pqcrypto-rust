@@ -3,16 +3,10 @@
 //! Generic over polynomial coefficient storage (i64).  Used by both
 //! Rq (Z/4591Z) and R3 (GF(3)) multiplication in `poly.rs`.
 //!
-//! ## Strategy
-//!
-//! 1. Convert the coefficient arrays to `i64` once.
-//! 2. `karatsuba_mul` computes the full linear convolution (degree 2p-2)
-//!    using Θ(n^(log₂ 3)) operations.
-//! 3. `reduce_ring` applies the NTRU Prime ring law x^p = x + 1.
-//! 4. Convert back to the target coefficient type.
-//!
-//! The base case below `KARATSUBA_THRESHOLD` (32) uses a straight schoolbook
-//! loop without secret-dependent zero skips.
+//! Computes the full linear convolution in Θ(n^(log₂ 3)) operations, then
+//! applies the NTRU Prime ring law x^p = x + 1. The base case below
+//! `KARATSUBA_THRESHOLD` (32) uses a schoolbook loop without
+//! secret-dependent zero skips.
 
 use crate::secret::SecretVec;
 

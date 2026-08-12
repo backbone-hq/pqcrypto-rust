@@ -46,6 +46,8 @@ pub enum PqcErrorKind {
     InvalidPublicKey,
     /// Invalid secret key contents (ML-KEM).
     InvalidSecretKey,
+    /// Internal invariant failure (should be unreachable).
+    Internal,
 }
 
 /// Trait for converting crate-specific errors to/from the common `PqcErrorKind`.
@@ -64,33 +66,21 @@ pub trait PqcError: fmt::Debug + fmt::Display + PartialEq + Eq + Send + Sync + '
 ///
 /// Usage:
 /// ```rust
-/// use backbone_pqcrypto_internals::{impl_pqc_error, error::{PqcError, PqcErrorKind}};
+/// use backbone_pqcrypto_internals::{impl_pqc_error, error::PqcErrorKind};
 ///
 /// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// pub enum MyError {
-///     InvalidKeyLength,
-///     InvalidSecretKeyLength,
-///     RngFailure,
-///     CustomError,
-/// }
+/// pub enum MyError { InvalidKeyLength, RngFailure }
 ///
-/// impl std::fmt::Display for MyError {
-///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-///         match self {
-///             MyError::InvalidKeyLength => write!(f, "invalid key length"),
-///             MyError::InvalidSecretKeyLength => write!(f, "invalid secret key length"),
-///             MyError::RngFailure => write!(f, "rng failure"),
-///             MyError::CustomError => write!(f, "custom error"),
-///         }
+/// impl core::fmt::Display for MyError {
+///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+///         write!(f, "{self:?}")
 ///     }
 /// }
 ///
 /// impl_pqc_error! {
 ///     MyError,
 ///     InvalidKeyLength => PqcErrorKind::InvalidKeyLength,
-///     InvalidSecretKeyLength => PqcErrorKind::InvalidSecretKeyLength,
 ///     RngFailure => PqcErrorKind::RngFailure,
-///     // CustomError has no mapping -> returns None
 /// }
 /// ```
 #[macro_export]
@@ -105,6 +95,51 @@ macro_rules! impl_pqc_error {
             }
 
 
+        }
+    };
+}
+
+/// Convenience macro to define a crate's public `Error` enum together with its
+/// `Display` impl, its `core::error::Error` impl (behind the `std` feature),
+/// and its `PqcError`/`PqcErrorKind` mapping in one place.
+///
+/// Every variant maps to the same-named `PqcErrorKind`; if a variant has no
+/// corresponding kind, add one to the taxonomy in this module.
+#[macro_export]
+macro_rules! define_error {
+    (
+        $(#[$enum_doc:meta])*
+        $error_type:ident;
+        $(
+            $(#[$variant_doc:meta])*
+            $variant:ident => $msg:literal
+        ),+ $(,)?
+    ) => {
+        $(#[$enum_doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum $error_type {
+            $(
+                $(#[$variant_doc])*
+                $variant,
+            )+
+        }
+
+        impl ::core::fmt::Display for $error_type {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                match self {
+                    $(
+                        $error_type::$variant => ::core::write!(f, $msg),
+                    )+
+                }
+            }
+        }
+
+        #[cfg(feature = "std")]
+        impl ::core::error::Error for $error_type {}
+
+        $crate::impl_pqc_error! {
+            $error_type,
+            $( $variant => $crate::error::PqcErrorKind::$variant, )+
         }
     };
 }

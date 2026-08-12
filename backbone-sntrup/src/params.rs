@@ -1,5 +1,5 @@
 //! Parameter constants for SNTRUP variants.
-//! Defines the `Params` trait and the `Sntrup761` implementation.
+//! Defines the `Params` trait and the per-variant marker types.
 
 /// Trait providing parameter constants for an SNTRUP parameter set.
 pub trait Params {
@@ -21,9 +21,7 @@ pub trait Params {
 
 /// Streamlined NTRU Prime sntrup761 parameter set.
 ///
-/// - Ring: Z/4591Z`[x]`/(x^761 - x - 1)
-/// - Small-polynomial weight: 286
-/// - PK: 1158 bytes, SK: 1763 bytes, CT: 1039 bytes, SS: 32 bytes
+/// Ring: Z/4591Z`[x]`/(x^761 - x - 1)
 #[derive(Copy, Clone, Debug)]
 pub struct Sntrup761;
 
@@ -39,8 +37,7 @@ impl Params for Sntrup761 {
 
 /// Streamlined NTRU Prime sntrup653 parameter set.
 ///
-/// - Ring: Z/4621Z`[x]`/(x^653 - x - 1)
-/// - Small-polynomial weight: 288
+/// Ring: Z/4621Z`[x]`/(x^653 - x - 1)
 #[derive(Copy, Clone, Debug)]
 pub struct Sntrup653;
 
@@ -54,10 +51,57 @@ impl Params for Sntrup653 {
     const SS_BYTES: usize = 32;
 }
 
+/// Streamlined NTRU Prime sntrup953 parameter set.
+///
+/// Ring: Z/6343Z`[x]`/(x^953 - x - 1)
+#[derive(Copy, Clone, Debug)]
+pub struct Sntrup953;
+
+impl Params for Sntrup953 {
+    const P: usize = 953;
+    const Q: i16 = 6343;
+    const W: usize = 396;
+    const PK_BYTES: usize = 1505;
+    const SK_BYTES: usize = 2254;
+    const CT_BYTES: usize = 1349;
+    const SS_BYTES: usize = 32;
+}
+
+/// Streamlined NTRU Prime sntrup1013 parameter set.
+///
+/// Ring: Z/7177Z`[x]`/(x^1013 - x - 1)
+#[derive(Copy, Clone, Debug)]
+pub struct Sntrup1013;
+
+impl Params for Sntrup1013 {
+    const P: usize = 1013;
+    const Q: i16 = 7177;
+    const W: usize = 448;
+    const PK_BYTES: usize = 1623;
+    const SK_BYTES: usize = 2417;
+    const CT_BYTES: usize = 1455;
+    const SS_BYTES: usize = 32;
+}
+
+/// Streamlined NTRU Prime sntrup1277 parameter set.
+///
+/// Ring: Z/7879Z`[x]`/(x^1277 - x - 1)
+#[derive(Copy, Clone, Debug)]
+pub struct Sntrup1277;
+
+impl Params for Sntrup1277 {
+    const P: usize = 1277;
+    const Q: i16 = 7879;
+    const W: usize = 492;
+    const PK_BYTES: usize = 2067;
+    const SK_BYTES: usize = 3059;
+    const CT_BYTES: usize = 1847;
+    const SS_BYTES: usize = 32;
+}
+
 /// Streamlined NTRU Prime sntrup857 parameter set.
 ///
-/// - Ring: Z/5167Z`[x]`/(x^857 - x - 1)
-/// - Small-polynomial weight: 322
+/// Ring: Z/5167Z`[x]`/(x^857 - x - 1)
 #[derive(Copy, Clone, Debug)]
 pub struct Sntrup857;
 

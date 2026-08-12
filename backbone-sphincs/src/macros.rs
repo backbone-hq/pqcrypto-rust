@@ -1,29 +1,34 @@
-/// Generate a full SPHINCS+ variant module (PublicKey, SecretKey, Signature,
-/// keygen, sign, verify, AsRef impls, and tests).
+/// Macro to generate the public API for an SPHINCS+ variant module.
 ///
-/// `$param_type` must be a params type like `Sha2_128f` or `Shake128f`
-/// defined in `crate::params`.
+/// Generates `PublicKey`, `SecretKey`, `Signature` types along with
+/// `keygen`, `keygen_with_rng`, `sign`, `sign_with_rng`, `verify` public functions.
+///
+/// `$param_type`: A type implementing `ConstParams` (e.g. `Sha2_128f`).
 #[macro_export]
 macro_rules! define_variant {
     ($param_type:ident) => {
-        use $crate::error::Error;
-        use $crate::params::$param_type;
-        use $crate::params::Params;
         use alloc::vec::Vec;
-        use sha3::{digest::ExtendableOutput, digest::Update, digest::XofReader, Shake256};
-        #[cfg(feature = "zeroize")]
+        use backbone_pqcrypto_internals::oid::HashAlgorithm;
+        use backbone_pqcrypto_internals::secret::{SecretArray, SecretVec};
+        use $crate::error::Error;
+        use $crate::params::$param_type as Params;
+        use $crate::params::ConstParams;
+        use $crate::rand_core::CryptoRngCore;
+        use $crate::sphincs::slh_keygen;
+        use $crate::sphincs::slh_sign_internal;
+        use $crate::sphincs::slh_verify_internal;
         use zeroize::Zeroize;
 
-        #[doc = concat!("Public key for ", stringify!($param_type), ".")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        /// Public key.
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct PublicKey {
-            /// Raw public key bytes.
+            /// Raw public key bytes (pk_seed ∥ pk_root).
             pub pk: Vec<u8>,
         }
 
-        #[doc = concat!("Secret key for ", stringify!($param_type), ".")]
-        #[cfg_attr(feature = "zeroize", derive(Zeroize))]
-        #[cfg_attr(feature = "zeroize", zeroize(drop))]
+        /// Secret key.
+        #[derive(Zeroize)]
+        #[zeroize(drop)]
         pub struct SecretKey {
             sk: Vec<u8>,
         }
@@ -36,17 +41,17 @@ macro_rules! define_variant {
             }
         }
 
-        #[doc = concat!("Signature for ", stringify!($param_type), ".")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        /// Signature.
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct Signature {
             /// Raw signature bytes.
             pub sig: Vec<u8>,
         }
 
         impl PublicKey {
-            #[doc = concat!("Construct a ", stringify!($param_type), " public key from raw bytes.")]
+            /// Construct from raw bytes.
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$param_type as Params>::PK_BYTES {
+                if bytes.len() != <Params as ConstParams>::PK_BYTES {
                     return Err(Error::InvalidKeyLength);
                 }
                 Ok(Self { pk: bytes.to_vec() })
@@ -54,267 +59,218 @@ macro_rules! define_variant {
         }
 
         impl SecretKey {
-            #[doc = concat!("Construct a ", stringify!($param_type), " secret key from raw bytes.")]
+            /// Construct from raw bytes.
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$param_type as Params>::SK_BYTES {
+                if bytes.len() != <Params as ConstParams>::SK_BYTES {
                     return Err(Error::InvalidSecretKeyLength);
                 }
                 Ok(Self { sk: bytes.to_vec() })
             }
-
-            pub fn as_bytes(&self) -> &[u8] {
-                &self.sk
-            }
         }
 
         impl Signature {
-            #[doc = concat!("Construct a ", stringify!($param_type), " signature from raw bytes.")]
+            /// Construct from raw bytes.
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$param_type as Params>::SIG_BYTES {
+                if bytes.len() != <Params as ConstParams>::SIG_BYTES {
                     return Err(Error::InvalidSignatureLength);
                 }
-                Ok(Self { sig: bytes.to_vec() })
+                Ok(Self {
+                    sig: bytes.to_vec(),
+                })
             }
         }
 
-        #[doc = concat!("Generate a ", stringify!($param_type), " keypair deterministically from a seed.")]
-        pub fn keygen(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            if seed.len() != <$param_type as Params>::SEED_BYTES {
-                return Err(Error::InvalidSeedLength);
+        // ------------------------------------------------------------------
+        // SLH-DSA message formatting (FIPS-205 Section 10.2)
+        // ------------------------------------------------------------------
+
+        /// Format a message for context-mode SLH-DSA (FIPS 205 Section 10.2).
+        /// Produces: 0x00 ∥ ctx_len ∥ ctx ∥ M
+        /// Does NOT short-circuit on empty context — even an empty context
+        /// is formatted as 0x00 ∥ 0x00 ∥ M for the external API.
+        fn format_slh_message(context: &[u8], msg: &[u8]) -> Result<Vec<u8>, Error> {
+            if context.len() > 255 {
+                return Err(Error::InvalidContextLength);
             }
-            let (pk, sk) = $crate::sign::keygen::<$param_type>(seed);
-            Ok((PublicKey { pk }, SecretKey { sk }))
+            let mut formatted = Vec::with_capacity(2 + context.len() + msg.len());
+            formatted.push(0);
+            formatted.push(u8::try_from(context.len()).map_err(|_| Error::InvalidContextLength)?);
+            formatted.extend_from_slice(context);
+            formatted.extend_from_slice(msg);
+            Ok(formatted)
         }
 
-        #[doc = concat!("Generate a ", stringify!($param_type), " keypair from an exact-length seed.")]
-        pub fn keygen_checked(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            let (pk, sk) = $crate::sign::keygen_checked::<$param_type>(seed)?;
-            Ok((PublicKey { pk }, SecretKey { sk }))
-        }
-
-        #[doc = concat!("Generate a keypair from a seed (alias for keygen) — ", stringify!($param_type), ".")]
-        pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen(seed)
-        }
-
-        #[doc = concat!("Generate a keypair from an exact-length seed — ", stringify!($param_type), ".")]
-        pub fn keypair_from_seed_checked(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen_checked(seed)
-        }
-
-
-        fn _sign_deterministic_pure(
-            sk: &SecretKey,
-            msg: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let sig = $crate::sign::sign::<$param_type>(sk.as_ref(), msg, seed)?;
-            Ok(Signature { sig })
-        }
-
-        fn _verify_pure(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            $crate::sign::verify::<$param_type>(&pk.pk, msg, &signature.sig)
-        }
-
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " (FIPS 205 SLH-DSA).")]
-        ///
-        /// Uses system randomness for the optional randomizer `optrand`.
-        /// The message is wrapped with an empty context prefix per FIPS 205.
-        pub fn sign(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
-            let mut seed = alloc::vec![0u8; <$param_type as Params>::N];
-            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
-            let formatted = format_slh_message(&[], msg)?;
-            _sign_deterministic_pure(sk, &formatted, &seed)
-        }
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " in pure mode.")]
-        ///
-        /// Uses system randomness for the optional randomizer `optrand`.
-        pub fn sign_pure(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
-            let mut seed = alloc::vec![0u8; <$param_type as Params>::N];
-            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
-            _sign_deterministic_pure(sk, msg, &seed)
-        }
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a specific seed (FIPS 205 SLH-DSA).")]
-        ///
-        /// The `seed` is used as the optional randomizer `optrand` (FIPS 205).
-        /// The message is wrapped with an empty context prefix per FIPS 205.
-        pub fn sign_deterministic(
-            sk: &SecretKey,
-            msg: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let formatted = format_slh_message(&[], msg)?;
-            _sign_deterministic_pure(sk, &formatted, seed)
-        }
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a specific seed in pure mode.")]
-        ///
-        /// The `seed` is used as the optional randomizer `optrand`.
-        pub fn sign_deterministic_pure(
-            sk: &SecretKey,
-            msg: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            _sign_deterministic_pure(sk, msg, seed)
-        }
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a FIPS 205 context.")]
-        pub fn sign_with_context(
-            sk: &SecretKey,
-            msg: &[u8],
-            ctx: &[u8],
-        ) -> Result<Signature, Error> {
-            let mut seed = alloc::vec![0u8; <$param_type as Params>::N];
-            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
-            sign_deterministic_with_context(sk, msg, ctx, &seed)
-        }
-
-        #[doc = concat!("Sign a message using ", stringify!($param_type), " with a FIPS 205 context and specific optrand.")]
-        pub fn sign_deterministic_with_context(
-            sk: &SecretKey,
-            msg: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let formatted = format_slh_message(ctx, msg)?;
-            _sign_deterministic_pure(sk, &formatted, seed)
-        }
-
-        #[doc = concat!("Sign a prehashed message using ", stringify!($param_type), " with a FIPS 205 context and OID.")]
-        pub fn sign_prehashed_with_context(
-            sk: &SecretKey,
+        /// Format message for Hash-SLH-DSA (pre-hash mode).
+        /// M' = 0x01 ∥ ctx_len ∥ ctx ∥ OID ∥ H
+        fn format_hash_slh_message(
+            context: &[u8],
             prehash_oid: &[u8],
             prehash: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let formatted = format_hash_slh_message(ctx, prehash_oid, prehash)?;
-            _sign_deterministic_pure(sk, &formatted, seed)
+        ) -> Result<Vec<u8>, Error> {
+            if context.len() > 255 {
+                return Err(Error::InvalidContextLength);
+            }
+            let mut formatted =
+                Vec::with_capacity(2 + context.len() + prehash_oid.len() + prehash.len());
+            formatted.push(1);
+            formatted.push(u8::try_from(context.len()).map_err(|_| Error::InvalidContextLength)?);
+            formatted.extend_from_slice(context);
+            formatted.extend_from_slice(prehash_oid);
+            formatted.extend_from_slice(prehash);
+            Ok(formatted)
         }
 
-        #[doc = concat!("Sign a message with HashSLH-DSA-SHAKE-256 using ", stringify!($param_type), ".")]
-        pub fn sign_prehashed_shake256_with_context(
+        // ------------------------------------------------------------------
+        // Public API
+        // ------------------------------------------------------------------
+
+        /// Generate an SPHINCS+ keypair using system randomness.
+        pub fn keygen() -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = SecretArray::<u8, { <Params as ConstParams>::SEED_BYTES }>::new();
+            getrandom::getrandom(seed.as_mut()).map_err(|_| Error::RngFailure)?;
+            keygen_with_seed(seed.as_ref())
+        }
+
+        /// Generate an SPHINCS+ keypair using a caller-provided RNG.
+        ///
+        /// Draws exactly [`ConstParams::SEED_BYTES`] bytes from `rng`
+        /// (`sk_seed || sk_prf || pk_seed`).
+        pub fn keygen_with_rng(
+            rng: &mut impl CryptoRngCore,
+        ) -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = SecretArray::<u8, { <Params as ConstParams>::SEED_BYTES }>::new();
+            rng.try_fill_bytes(seed.as_mut())
+                .map_err(|_| Error::RngFailure)?;
+            keygen_with_seed(seed.as_ref())
+        }
+
+        fn keygen_with_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
+            let n = <Params as ConstParams>::N;
+            let sk_seed = &seed[..n];
+            let sk_prf = &seed[n..2 * n];
+            let pk_seed = &seed[2 * n..3 * n];
+
+            let (vk_bytes, sk_bytes) = slh_keygen::<Params>(sk_seed, sk_prf, pk_seed)?;
+            Ok((PublicKey { pk: vk_bytes }, SecretKey { sk: sk_bytes }))
+        }
+
+        /// Sign a message (randomized).
+        ///
+        /// * `context` — domain separation context (max 255 bytes).
+        ///   `None` means pure mode.
+        pub fn sign(
             sk: &SecretKey,
             msg: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
         ) -> Result<Signature, Error> {
-            let mut ph = [0u8; 64];
-            let mut shake = Shake256::default();
-            shake.update(msg);
-            let mut reader = shake.finalize_xof();
-            reader.read(&mut ph);
-            sign_prehashed_with_context(sk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, ctx, seed)
+            let n = <Params as ConstParams>::N;
+            let mut optrand = SecretVec::<u8>::new(n);
+            getrandom::getrandom(&mut optrand).map_err(|_| Error::RngFailure)?;
+            sign_with_optrand(sk, msg, &optrand, context, hash_algorithm)
         }
 
+        /// Sign a message with a caller-provided RNG.
+        ///
+        /// Draws the `n`-byte randomizer `optrand` from `rng`.
+        pub fn sign_with_rng(
+            sk: &SecretKey,
+            msg: &[u8],
+            rng: &mut impl CryptoRngCore,
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
+        ) -> Result<Signature, Error> {
+            let n = <Params as ConstParams>::N;
+            let mut optrand = SecretVec::<u8>::new(n);
+            rng.try_fill_bytes(&mut optrand)
+                .map_err(|_| Error::RngFailure)?;
+            sign_with_optrand(sk, msg, &optrand, context, hash_algorithm)
+        }
 
-        #[doc = concat!("Verify a ", stringify!($param_type), " signature (FIPS 205 SLH-DSA).")]
-        #[must_use]
-        pub fn verify(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            let Ok(formatted) = format_slh_message(&[], msg) else {
-                return false;
+        fn sign_with_optrand(
+            sk: &SecretKey,
+            msg: &[u8],
+            optrand: &[u8],
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
+        ) -> Result<Signature, Error> {
+            let formatted = match (context, hash_algorithm) {
+                // FIPS 205 §10.2.1 (Alg. 22): pure mode prepends the domain
+                // separator 0x00 ∥ ctx_len ∥ ctx (empty context: 0x00 ∥ 0x00).
+                (None, None) => format_slh_message(&[], msg)?,
+                (Some(ctx), None) => format_slh_message(ctx, msg)?,
+                (None, Some(alg)) => format_hash_slh_message(
+                    &[],
+                    alg.der_bytes(),
+                    &$crate::sphincs::prehash_message(alg, msg),
+                )?,
+                (Some(ctx), Some(alg)) => format_hash_slh_message(
+                    ctx,
+                    alg.der_bytes(),
+                    &$crate::sphincs::prehash_message(alg, msg),
+                )?,
             };
-            _verify_pure(pk, &formatted, signature)
+            internal_sign(sk, &formatted, optrand)
         }
 
-        #[doc = concat!("Verify a ", stringify!($param_type), " signature in pure mode.")]
-        #[must_use]
-        pub fn verify_pure(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            _verify_pure(pk, msg, signature)
+        fn internal_sign(
+            sk: &SecretKey,
+            formatted: &[u8],
+            optrand: &[u8],
+        ) -> Result<Signature, Error> {
+            let sig_bytes =
+                slh_sign_internal::<Params>(sk.sk.as_slice(), formatted, Some(optrand))?;
+            Ok(Signature { sig: sig_bytes })
         }
 
-        #[doc = concat!("Verify a ", stringify!($param_type), " signature and return a validation error on malformed raw input.")]
-        pub fn verify_result(pk: &PublicKey, msg: &[u8], signature: &Signature) -> Result<(), Error> {
-            if pk.pk.len() != <$param_type as Params>::PK_BYTES {
+        /// Verify a signature.
+        ///
+        /// * `context` — domain separation context. Must match what was used during signing.
+        ///   `None` means pure mode.
+        pub fn verify(
+            pk: &PublicKey,
+            msg: &[u8],
+            signature: &Signature,
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
+        ) -> Result<(), Error> {
+            if pk.pk.len() != <Params as ConstParams>::PK_BYTES {
                 return Err(Error::InvalidKeyLength);
             }
-            if signature.sig.len() != <$param_type as Params>::SIG_BYTES {
+            if signature.sig.len() != <Params as ConstParams>::SIG_BYTES {
                 return Err(Error::InvalidSignatureLength);
             }
-            if verify(pk, msg, signature) {
+            let formatted = match (context, hash_algorithm) {
+                // FIPS 205 §10.2.1 (Alg. 22): pure mode prepends the domain
+                // separator 0x00 ∥ ctx_len ∥ ctx (empty context: 0x00 ∥ 0x00).
+                (None, None) => format_slh_message(&[], msg)?,
+                (Some(ctx), None) => format_slh_message(ctx, msg)?,
+                (None, Some(alg)) => format_hash_slh_message(
+                    &[],
+                    alg.der_bytes(),
+                    &$crate::sphincs::prehash_message(alg, msg),
+                )?,
+                (Some(ctx), Some(alg)) => format_hash_slh_message(
+                    ctx,
+                    alg.der_bytes(),
+                    &$crate::sphincs::prehash_message(alg, msg),
+                )?,
+            };
+
+            if slh_verify_internal::<Params>(
+                pk.pk.as_slice(),
+                &formatted,
+                signature.sig.as_slice(),
+            )? {
                 Ok(())
             } else {
                 Err(Error::InvalidSignature)
             }
         }
 
-        #[doc = concat!("Verify a ", stringify!($param_type), " signature with a FIPS 205 context.")]
-        #[must_use]
-        pub fn verify_with_context(
-            pk: &PublicKey,
-            msg: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let Ok(formatted) = format_slh_message(ctx, msg) else {
-                return false;
-            };
-            _verify_pure(pk, &formatted, signature)
-        }
-
-        #[doc = concat!("Verify a prehashed ", stringify!($param_type), " signature with a FIPS 205 context and OID.")]
-        #[must_use]
-        pub fn verify_prehashed_with_context(
-            pk: &PublicKey,
-            prehash_oid: &[u8],
-            prehash: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let Ok(formatted) = format_hash_slh_message(ctx, prehash_oid, prehash) else {
-                return false;
-            };
-            _verify_pure(pk, &formatted, signature)
-        }
-
-        #[doc = concat!("Verify a HashSLH-DSA-SHAKE-256 signature using ", stringify!($param_type), ".")]
-        #[must_use]
-        pub fn verify_prehashed_shake256_with_context(
-            pk: &PublicKey,
-            msg: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let mut ph = [0u8; 64];
-            let mut shake = Shake256::default();
-            shake.update(msg);
-            let mut reader = shake.finalize_xof();
-            reader.read(&mut ph);
-            verify_prehashed_with_context(pk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, signature, ctx)
-        }
-
-        fn format_slh_message(ctx: &[u8], msg: &[u8]) -> Result<Vec<u8>, Error> {
-            if ctx.len() > 255 {
-                return Err(Error::InvalidContextLength);
-            }
-            let mut formatted = Vec::with_capacity(2 + ctx.len() + msg.len());
-            formatted.push(0);
-            formatted.push(u8::try_from(ctx.len()).expect("ctx length is <= 255"));
-            formatted.extend_from_slice(ctx);
-            formatted.extend_from_slice(msg);
-            Ok(formatted)
-        }
-
-        fn format_hash_slh_message(
-            ctx: &[u8],
-            prehash_oid: &[u8],
-            prehash: &[u8],
-        ) -> Result<Vec<u8>, Error> {
-            if ctx.len() > 255 {
-                return Err(Error::InvalidContextLength);
-            }
-            let mut formatted = Vec::with_capacity(2 + ctx.len() + prehash_oid.len() + prehash.len());
-            formatted.push(1);
-            formatted.push(u8::try_from(ctx.len()).expect("ctx length is <= 255"));
-            formatted.extend_from_slice(ctx);
-            formatted.extend_from_slice(prehash_oid);
-            formatted.extend_from_slice(prehash);
-            Ok(formatted)
-        }
-
+        // ------------------------------------------------------------------
+        // AsRef impls
+        // ------------------------------------------------------------------
 
         impl AsRef<[u8]> for PublicKey {
             fn as_ref(&self) -> &[u8] {
@@ -334,52 +290,96 @@ macro_rules! define_variant {
             }
         }
 
+        // ------------------------------------------------------------------
+        // Inline unit tests
+        // ------------------------------------------------------------------
+
+        impl TryFrom<&[u8]> for PublicKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for SecretKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for Signature {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
         #[cfg(test)]
         mod tests {
             use super::*;
+            use alloc::vec;
+            use backbone_pqcrypto_internals::kat::FixedRng;
 
-            const SEED_SIZE: usize =
-                <$crate::params::$param_type as $crate::params::Params>::SEED_BYTES;
+            const N: usize = <Params as ConstParams>::N;
+            const SEED_SIZE: usize = <Params as ConstParams>::SEED_BYTES;
 
             #[test]
-            fn test_keygen_deterministic() {
-                let seed = [0x42u8; SEED_SIZE];
-                let (pk1, sk1) = keygen(&seed).unwrap();
-                let (pk2, sk2) = keygen(&seed).unwrap();
+            fn test_keygen_with_rng() {
+                let seed = vec![0x42u8; SEED_SIZE];
+                let (pk1, sk1) = keygen_with_rng(&mut FixedRng::new(seed.clone())).unwrap();
+                let (pk2, sk2) = keygen_with_rng(&mut FixedRng::new(seed)).unwrap();
                 assert_eq!(pk1.pk, pk2.pk);
                 assert_eq!(sk1.as_ref(), sk2.as_ref());
             }
 
             #[test]
             fn test_keygen_different_seeds() {
-                let (pk1, _) = keygen(&[0x12u8; SEED_SIZE]).unwrap();
-                let (pk2, _) = keygen(&[0x34u8; SEED_SIZE]).unwrap();
+                let (pk1, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x12u8; SEED_SIZE])).unwrap();
+                let (pk2, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x34u8; SEED_SIZE])).unwrap();
                 assert_ne!(pk1.pk, pk2.pk);
             }
 
             #[test]
             fn test_sign_verify_roundtrip() {
-                let seed = [0x42u8; SEED_SIZE];
-                let (pk, sk) = keygen(&seed).unwrap();
+                let seed = vec![0x42u8; SEED_SIZE];
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed)).unwrap();
                 let msg = b"post-quantum ready";
-                let sig = sign(&sk, msg).unwrap();
-                assert!(verify(&pk, msg, &sig));
+                let sig =
+                    sign_with_rng(&sk, msg, &mut FixedRng::new(vec![0u8; N]), None, None).unwrap();
+                assert!(verify(&pk, msg, &sig, None, None).is_ok());
             }
 
             #[test]
             fn test_verify_wrong_message() {
-                let seed = [0x42u8; SEED_SIZE];
-                let (pk, sk) = keygen(&seed).unwrap();
-                let sig = sign(&sk, b"original message").unwrap();
-                assert!(!verify(&pk, b"wrong message", &sig));
+                let seed = vec![0x42u8; SEED_SIZE];
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed)).unwrap();
+                let sig = sign_with_rng(
+                    &sk,
+                    b"original message",
+                    &mut FixedRng::new(vec![0u8; N]),
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert!(verify(&pk, b"wrong message", &sig, None, None).is_err());
             }
 
             #[test]
             fn test_verify_wrong_key() {
-                let (pk_a, _) = keygen(&[0x42u8; SEED_SIZE]).unwrap();
-                let (_, sk_b) = keygen(&[0xabu8; SEED_SIZE]).unwrap();
-                let sig = sign(&sk_b, b"msg").unwrap();
-                assert!(!verify(&pk_a, b"msg", &sig));
+                let (pk_a, _) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0x42u8; SEED_SIZE])).unwrap();
+                let (_, sk_b) =
+                    keygen_with_rng(&mut FixedRng::new(vec![0xabu8; SEED_SIZE])).unwrap();
+                let sig =
+                    sign_with_rng(&sk_b, b"msg", &mut FixedRng::new(vec![0u8; N]), None, None)
+                        .unwrap();
+                assert!(verify(&pk_a, b"msg", &sig, None, None).is_err());
             }
         }
     };

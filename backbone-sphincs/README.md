@@ -11,17 +11,23 @@ signatures built on top of a Merkle tree.
 trade-off (fast `f` or small `s`), and security level (128, 192, 256):
 
 | Variant | PK bytes | SK bytes | Sig bytes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | SHAKE-128s | 32 | 64 | 7856 |
 | SHAKE-128f | 32 | 64 | 17088 |
 | SHAKE-192s | 48 | 96 | 16224 |
 | SHAKE-192f | 48 | 96 | 35664 |
 | SHAKE-256s | 64 | 128 | 29792 |
 | SHAKE-256f | 64 | 128 | 49856 |
-| SHA2-* | (same per security/speed) | | |
+| SHA2-128s | 32 | 64 | 7856 |
+| SHA2-128f | 32 | 64 | 17088 |
+| SHA2-192s | 48 | 96 | 16224 |
+| SHA2-192f | 48 | 96 | 35664 |
+| SHA2-256s | 64 | 128 | 29792 |
+| SHA2-256f | 64 | 128 | 49856 |
 
-Keygen and sign are slow for `s` variants (full Merkle tree construction).
-`f` variants are fast enough for routine testing.
+## Validation
+
+Tested against NIST ACVP vectors (FIPS 205).
 
 ## Other Implementations
 

@@ -1,3 +1,6 @@
+//! FFT tables for McEliece 6688128.
+//! See `mod.rs` (module doc) for provenance and regeneration guidance.
+
 pub(crate) const FFT_CONSTS_6688128: [[u64; 13]; 128] = [
     [
         0x6969969669699696,

@@ -1,3 +1,5 @@
+#![allow(clippy::cast_sign_loss)]
+// All casts in this module operate on bounded values (byte/limb extraction, loop counters).
 //! NTRU LPRime KEM: key generation, encapsulation, decapsulation.
 //!
 //! Generic over ring dimension `P` and modulus `Q`.
@@ -9,35 +11,13 @@
 
 use crate::aes_ctr::aes256_ctr_fill;
 use crate::error::Error;
-use crate::poly::{qshift, r3_encoded_bytes, rq_rounded_bytes, Rq, R3};
+use crate::poly::{modq_freeze, qshift, r3_encoded_bytes, rq_rounded_bytes, Rq, R3};
 use alloc::vec;
 use alloc::vec::Vec;
+use backbone_pqcrypto_internals::nist_seed_expander::NistSeedExpander;
 use backbone_pqcrypto_internals::secret::{SecretArray, SecretVec};
 use sha2::{Digest, Sha512};
-use sha3::{
-    digest::{ExtendableOutput, Update, XofReader},
-    Shake256,
-};
 use subtle::{ConditionallySelectable, ConstantTimeEq};
-
-fn modq_freeze<const Q: i16>(a: i32) -> i16 {
-    let q = i32::from(Q);
-    let (m1, m2) = barrett_constants::<Q>();
-    let mut a = a;
-    a -= q * ((m1 * a) >> 20);
-    a -= q * ((m2 * a + 134217728) >> 28);
-    i16::try_from(a).expect("Barrett-reduced value fits in i16")
-}
-
-fn barrett_constants<const Q: i16>() -> (i32, i32) {
-    let q = u64::try_from(Q).expect("Q is positive");
-    let m1 = (1u64 << 20) / q;
-    let m2 = (1u64 << 28) / q;
-    (
-        i32::try_from(m1).expect("value fits in i32"),
-        i32::try_from(m2).expect("value fits in i32"),
-    )
-}
 
 fn modq_sum<const Q: i16>(a: i16, b: i16) -> i16 {
     modq_freeze::<Q>(i32::from(a) + i32::from(b))
@@ -49,14 +29,6 @@ fn modq_fromuint32<const Q: i16>(x: u32) -> i16 {
         i32::try_from(x % u32::try_from(Q).expect("Q is positive")).expect("value fits in i32")
             - qs,
     )
-}
-
-fn prng_label(seed: &[u8], label: u8, out: &mut [u8]) {
-    let mut shake = Shake256::default();
-    shake.update(seed);
-    shake.update(&[label]);
-    let mut reader = shake.finalize_xof();
-    reader.read(out);
 }
 
 fn uint32_minmax_pair(a: u32, b: u32) -> (u32, u32) {
@@ -145,18 +117,9 @@ fn rq_fromseed<const P: usize, const Q: i16>(seed: &[u8; 32]) -> Rq<P, Q> {
     r
 }
 
-/// Generate a weight-w small polynomial from a seed.
-fn small_seeded_weightw<const P: usize>(seed: &[u8; 32], w: usize) -> R3<P> {
-    let byte_len = P * 4;
-    let mut buf = vec![0u8; byte_len];
-    aes256_ctr_fill(seed, &mut buf);
-
-    let mut words = vec![0u32; P];
-    for i in 0..P {
-        words[i] = u32::from_le_bytes([buf[4 * i], buf[4 * i + 1], buf[4 * i + 2], buf[4 * i + 3]]);
-    }
-
-    let mut list = vec![0u32; P];
+/// Generate a weight-w small polynomial from u32 words.
+fn small_from_words<const P: usize>(words: &[u32], w: usize) -> R3<P> {
+    let mut list = SecretVec::<u32>::new(P);
     for i in 0..w {
         list[i] = words[i] & !1;
     }
@@ -170,6 +133,20 @@ fn small_seeded_weightw<const P: usize>(seed: &[u8; 32], w: usize) -> R3<P> {
         poly.0[i] = i8::try_from(list[i] & 3).expect("low bits fit in i8") - 1;
     }
     poly
+}
+
+/// Generate a weight-w small polynomial from a seed.
+fn small_seeded_weightw<const P: usize>(seed: &[u8; 32], w: usize) -> R3<P> {
+    let byte_len = P * 4;
+    let mut buf = SecretVec::<u8>::new(byte_len);
+    aes256_ctr_fill(seed, buf.as_mut());
+
+    let mut words = SecretVec::<u32>::new(P);
+    for i in 0..P {
+        words[i] = u32::from_le_bytes([buf[4 * i], buf[4 * i + 1], buf[4 * i + 2], buf[4 * i + 3]]);
+    }
+
+    small_from_words::<P>(words.as_ref(), w)
 }
 
 const C_COUNT: usize = 256;
@@ -203,23 +180,15 @@ fn unpack_top(input: &[u8]) -> Result<[u8; C_COUNT], Error> {
     Ok(t)
 }
 
-/// Generate an NTRUPLR key pair from a 32-byte seed.
-pub(crate) fn keypair<
-    const P: usize,
-    const Q: i16,
-    const TAU0: i32,
-    const TAU1: i32,
-    const TAU2: i32,
-    const TAU3: i32,
->(
+/// Generate an NTRU LPRime key pair from a 48-byte DRBG seed.
+pub(crate) fn keypair_drbg<const P: usize, const Q: i16>(
+    expander: &mut NistSeedExpander,
     pk: &mut [u8],
     sk: &mut [u8],
-    seed: &[u8],
     w: usize,
 ) -> Result<(), Error> {
     let pk_bytes = rq_rounded_bytes(P, Q) + 32;
     let r3_enc = r3_encoded_bytes(P);
-    let _ = (TAU0, TAU1, TAU2, TAU3);
 
     if pk.len() != pk_bytes {
         return Err(Error::InvalidKeyLength);
@@ -229,13 +198,17 @@ pub(crate) fn keypair<
     }
 
     let mut k_seed = [0u8; 32];
-    let mut a_seed = SecretArray::<u8, 32>::new();
-    prng_label(seed, b'G', &mut k_seed);
-    prng_label(seed, b'a', a_seed.as_mut());
+    expander.fill_bytes(&mut k_seed);
 
     let g = rq_fromseed::<P, Q>(&k_seed);
 
-    let a = small_seeded_weightw::<P>(&a_seed, w);
+    let mut word_buf = [0u8; 4];
+    let mut a_words = SecretVec::<u32>::new(P);
+    for i in 0..P {
+        expander.fill_bytes(&mut word_buf);
+        a_words[i] = u32::from_le_bytes(word_buf);
+    }
+    let a = small_from_words::<P>(a_words.as_ref(), w);
 
     let ga = g.mul_small(&a);
     let a_poly = ga.round3();
@@ -249,7 +222,7 @@ pub(crate) fn keypair<
         .expect("sk buffer is exactly r3_enc");
     sk[r3_enc..r3_enc + pk_bytes].copy_from_slice(pk);
     let rho_start = r3_enc + pk_bytes;
-    prng_label(seed, b'r', &mut sk[rho_start..rho_start + 32]);
+    expander.fill_bytes(&mut sk[rho_start..rho_start + 32]);
     let cache = hash_prefix(4, pk);
     sk[rho_start + 32..rho_start + 64].copy_from_slice(&cache);
 
@@ -288,7 +261,7 @@ pub(crate) fn encaps<
     let g = rq_fromseed::<P, Q>(k_seed);
     let a = Rq::<P, Q>::decode_rounded(&pk[32..]).map_err(|_| Error::InvalidKeyLength)?;
 
-    let b_seed = hash_prefix(5, r_32);
+    let b_seed = SecretArray::from_array(hash_prefix(5, r_32));
     let b = small_seeded_weightw::<P>(&b_seed, w);
 
     let gb = g.mul_small(&b);
@@ -410,6 +383,11 @@ pub(crate) fn decaps<
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     use super::*;
 
     const P: usize = 761;
@@ -461,10 +439,10 @@ mod tests {
 
     #[test]
     fn test_keygen_roundtrip() {
-        let seed = [0x42u8; 32];
+        let mut expander = NistSeedExpander::new(&[0x42u8; 48]);
         let mut pk = vec![0u8; PK_BYTES];
         let mut sk = vec![0u8; SK_BYTES];
-        keypair::<P, Q, TAU0, TAU1, TAU2, TAU3>(&mut pk, &mut sk, &seed, W).unwrap();
+        keypair_drbg::<P, Q>(&mut expander, &mut pk, &mut sk, W).unwrap();
 
         assert_eq!(pk.len(), PK_BYTES);
         assert_eq!(sk.len(), SK_BYTES);

@@ -1,16 +1,13 @@
 //! HQC (Hamming Quasi-Cyclic) KEM implementation
-//! NIST post-quantum cryptography standard (FIPS 209)
+//! NIST post-quantum cryptography standard (FIPS 207)
 #![no_std]
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss
-)]
+#![deny(missing_docs)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
+pub use rand_core;
 pub(crate) mod codec;
 pub mod error;
 pub(crate) mod gf;

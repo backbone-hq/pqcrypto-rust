@@ -4,6 +4,6 @@ We appreciate your interest in contributing to PQCrypto. The best way to get sta
 
 If you're looking to discuss the direction of the project, we'd prefer if you email us at [root@backbone.dev](mailto:root@backbone.dev).
 
---- 
+---
 
 This module is maintained with 🦴 by [Backbone](https://backbone.dev)

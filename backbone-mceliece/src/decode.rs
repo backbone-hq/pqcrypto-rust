@@ -1,5 +1,5 @@
 use crate::gf;
-use alloc::vec::Vec;
+use backbone_pqcrypto_internals::secret::SecretVec;
 
 /// Evaluate polynomial `f` (degree `sys_t`, leading coeff `f[sys_t]`) at `a`.
 fn eval_poly<const GFBITS: usize>(f: &[u16], a: u16, sys_t: usize) -> u16 {
@@ -47,9 +47,9 @@ pub(crate) fn synd<const GFBITS: usize>(
 /// Input:  s     – syndrome (s[0..2*sys_t-1])
 /// Output: out   – error locator poly (out.len() must be >= sys_t+1)
 pub(crate) fn bm<const GFBITS: usize>(out: &mut [u16], s: &[u16], sys_t: usize) {
-    let mut c_poly = alloc::vec![0u16; sys_t + 1];
-    let mut b_poly = alloc::vec![0u16; sys_t + 1];
-    let mut tmp_poly = alloc::vec![0u16; sys_t + 1];
+    let mut c_poly = SecretVec::<u16>::new(sys_t + 1);
+    let mut b_poly = SecretVec::<u16>::new(sys_t + 1);
+    let mut tmp_poly = SecretVec::<u16>::new(sys_t + 1);
 
     b_poly[1] = 1;
     c_poly[0] = 1;
@@ -124,31 +124,33 @@ pub(crate) fn root<const GFBITS: usize>(
 /// decode and verify the error vector.
 ///
 /// Returns `(e, valid)` — error vector and success flag (1 = ok, 0 = fail).
+/// `e` is a zeroizing buffer; the caller moves its bytes into the secret key
+/// format without any bare copy surviving.
 pub(crate) fn decrypt_with_support<const GFBITS: usize>(
     f: &[u16],
     roots: &[u16],
     c: &[u8],
     sys_n: usize,
     sys_t: usize,
-) -> (Vec<u8>, u8) {
-    let mut s = alloc::vec![0u16; 2 * sys_t];
-    let mut s_cmp = alloc::vec![0u16; 2 * sys_t];
-    let mut locator = alloc::vec![0u16; sys_t + 1];
-    let mut images = alloc::vec![0u16; sys_n];
+) -> (SecretVec<u8>, u8) {
+    let mut s = SecretVec::<u16>::new(2 * sys_t);
+    let mut s_cmp = SecretVec::<u16>::new(2 * sys_t);
+    let mut locator = SecretVec::<u16>::new(sys_t + 1);
+    let mut images = SecretVec::<u16>::new(sys_n);
 
     let ct_bytes = c.len();
     let nbytes = sys_n / 8;
-    let mut r = alloc::vec![0u8; nbytes];
+    let mut r = SecretVec::<u8>::new(nbytes);
     r[..ct_bytes.min(nbytes)].copy_from_slice(&c[..ct_bytes.min(nbytes)]);
 
-    synd::<GFBITS>(&mut s, f, roots, &r, sys_n, sys_t);
+    synd::<GFBITS>(s.as_mut(), f, roots, r.as_ref(), sys_n, sys_t);
 
-    bm::<GFBITS>(&mut locator, &s, sys_t);
+    bm::<GFBITS>(locator.as_mut(), s.as_ref(), sys_t);
 
-    root::<GFBITS>(&mut images, &locator, roots, sys_n, sys_t);
+    root::<GFBITS>(images.as_mut(), locator.as_ref(), roots, sys_n, sys_t);
 
     let nbytes = sys_n / 8;
-    let mut e = alloc::vec![0u8; nbytes];
+    let mut e = SecretVec::<u8>::new(nbytes);
     let mut w: u16 = 0;
     for i in 0..sys_n {
         let t = gf::gf_iszero(images[i]) & 1;
@@ -156,7 +158,7 @@ pub(crate) fn decrypt_with_support<const GFBITS: usize>(
         w = w.wrapping_add(t);
     }
 
-    synd::<GFBITS>(&mut s_cmp, f, roots, &e, sys_n, sys_t);
+    synd::<GFBITS>(s_cmp.as_mut(), f, roots, e.as_ref(), sys_n, sys_t);
 
     let mut check: u16 = w ^ u16::try_from(sys_t).expect("sys_t ≤ 65535");
     for j in 0..2 * sys_t {

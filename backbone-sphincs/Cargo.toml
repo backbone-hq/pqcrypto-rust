@@ -1,11 +1,13 @@
 [package]
 name = "backbone-sphincs"
-version = "0.1.1"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
-description = "SPHINCS+ (FIPS 205) implementation: Stateless Hash-Based Digital Signature Standard"
+rust-version.workspace = true
+description = "SPHINCS+ (FIPS 205) implementation: Stateless Hash-Based Digital Signature Standard."
 categories = ["cryptography", "no-std"]
 keywords = ["sphincs+", "fips-205", "signature", "post-quantum", "hash-based"]
 exclude = ["tests/"]
@@ -14,24 +16,26 @@ exclude = ["tests/"]
 workspace = true
 
 [dependencies]
-backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.1", path = "../backbone-pqcrypto-internals", default-features = false }
 zeroize = { workspace = true }
-sha3 = { workspace = true }
-sha2 = { workspace = true }
 getrandom = { workspace = true }
+rand_core = { workspace = true }
+
+# Address encoding, HMAC, hash functions
+zerocopy = { version = "0.8", features = ["derive"] }
+hmac = "0.13"
+shake = "0.1"
+sha2 = "0.11"
+digest = "0.11"
+sha3 = { workspace = true }
 
 [features]
-default = ["std", "zeroize"]
+default = ["std"]
 std = [
   "alloc",
-  "sha2/std",
+  "sha2/alloc",
   "sha3/std",
-  "zeroize/alloc",
   "backbone-pqcrypto-internals/std",
   "getrandom/std",
 ]
-alloc = ["zeroize/alloc"]
-zeroize = ["backbone-pqcrypto-internals/zeroize"]
-
-[dev-dependencies]
-hex = "0.4"
+alloc = []

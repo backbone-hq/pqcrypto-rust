@@ -1,12 +1,7 @@
 //! Portable ("soft") NTT backend for ML-KEM.
 //! Pure Rust implementation using Montgomery arithmetic with i16 coefficients.
 //!
-//! Always compiled — acts as the fallback on x86_64 when AVX2 is not
-//! available at compile time, and as the sole backend on non-x86 targets.
-//!
-//! When `target_feature = "avx2"` is enabled, the AVX2 backend takes over
-//! and these functions become unused (suppress dead_code).
-#![cfg_attr(all(feature = "simd", target_feature = "avx2"), allow(dead_code))]
+//! This is the sole ML-KEM NTT backend.
 
 use crate::field::{barrett_reduce, montgomery_reduce};
 use crate::ntt::ZETAS;

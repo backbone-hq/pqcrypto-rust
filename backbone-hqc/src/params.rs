@@ -69,6 +69,10 @@ pub trait Params {
     const RED_MASK: u64;
     /// Coefficients of the RS generator polynomial.
     const RS_POLY_COEFS: &'static [u8];
+    /// Barrett multiplier `mu = floor(2^32 / N)` for constant-time keygen sampling.
+    const PARAM_N_MU: u32;
+    /// Rejection threshold `t = floor(2^24 / N) * N` for keygen sampling.
+    const REJECTION_THRESHOLD: u32;
 
     /// Multiplicity for Reed-Muller repetition.
     const RM_MULTIPLICITY: usize = if Self::N2 % 128 == 0 {
@@ -100,6 +104,8 @@ impl Params for Hqc128 {
         89, 69, 153, 116, 176, 117, 111, 75, 73, 233, 242, 233, 65, 210, 21, 139, 103, 173, 67,
         118, 105, 210, 174, 110, 74, 69, 228, 82, 255, 181, 1,
     ];
+    const PARAM_N_MU: u32 = 243079;
+    const REJECTION_THRESHOLD: u32 = 16_767_881;
 }
 
 /// HQC-3 parameter set (NIST Security Level 3, AES-192 equivalent).
@@ -124,6 +130,8 @@ impl Params for Hqc192 {
         45, 216, 239, 24, 253, 104, 27, 40, 107, 50, 163, 210, 227, 134, 224, 158, 119, 13, 158, 1,
         238, 164, 82, 43, 15, 232, 246, 142, 50, 189, 29, 232, 1,
     ];
+    const PARAM_N_MU: u32 = 119800;
+    const REJECTION_THRESHOLD: u32 = 16_742_417;
 }
 
 /// HQC-5 parameter set (NIST Security Level 5, AES-256 equivalent).
@@ -149,6 +157,8 @@ impl Params for Hqc256 {
         201, 115, 97, 210, 186, 183, 141, 217, 123, 12, 31, 243, 180, 219, 152, 239, 99, 141, 4,
         246, 191, 144, 8, 232, 47, 27, 141, 178, 130, 64, 124, 47, 39, 188, 216, 48, 199, 187, 1,
     ];
+    const PARAM_N_MU: u32 = 74517;
+    const REJECTION_THRESHOLD: u32 = 16_772_367;
 }
 
 #[cfg(test)]

@@ -41,13 +41,6 @@ pub fn ct_gt_usize(a: usize, b: usize) -> Choice {
     }
 }
 
-/// `Choice::from(1)` iff `a < b`.
-#[inline]
-#[must_use]
-pub fn ct_lt_usize(a: usize, b: usize) -> Choice {
-    ct_gt_usize(b, a)
-}
-
 /// CT count of elements ≠ `zero`. Branching per element would reveal support
 /// patterns of secret vectors.
 pub fn ct_count_nonzero<T: ConstantTimeEq>(values: &[T], zero: &T) -> usize {
@@ -86,13 +79,6 @@ mod tests {
         assert_eq!(ct_gt_usize(3, 5).unwrap_u8(), 0);
         assert_eq!(ct_gt_usize(0, 0).unwrap_u8(), 0);
         assert_eq!(ct_gt_usize(usize::MAX, 0).unwrap_u8(), 1);
-    }
-
-    #[test]
-    fn test_ct_lt_usize() {
-        assert_eq!(ct_lt_usize(3, 5).unwrap_u8(), 1);
-        assert_eq!(ct_lt_usize(5, 5).unwrap_u8(), 0);
-        assert_eq!(ct_lt_usize(7, 5).unwrap_u8(), 0);
     }
 
     #[test]

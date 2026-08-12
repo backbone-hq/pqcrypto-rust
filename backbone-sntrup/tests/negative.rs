@@ -1,193 +1,99 @@
-//! Streamlined NTRU Prime negative tests.
+//! Negative tests: malformed inputs must be rejected by the public API.
+//!
+//! Streamlined NTRU Prime validates byte lengths (public key, secret key,
+//! ciphertext) but has no canonical-encoding rejection beyond lengths, so
+//! these tests assert the length checks and deterministic tamper behavior
+//! (a corrupted ciphertext must never silently reproduce the same shared
+//! secret). Garbage-input robustness (no panics) lives in `validation.rs`.
 
-use backbone_sntrup::error::Error;
-use backbone_sntrup::{sntrup653, sntrup761, sntrup857};
+use backbone_pqcrypto_internals::kat::FixedRng;
+use backbone_sntrup::{sntrup1277, sntrup653, sntrup761};
 
-#[test]
-fn sntrup653_negative_wrong_key() {
-    let (pk_a, _sk_a) = sntrup653::keypair_from_seed(&[0x42u8; 32]).expect("keygen A");
-    let (_pk_b, sk_b) = sntrup653::keypair_from_seed(&[0x99u8; 32]).expect("keygen B");
-    let enc = sntrup653::encaps_deterministic(&pk_a, &[0x13u8; 32]).expect("encaps should succeed");
+macro_rules! negative_tests {
+    ($setup:ident, $variant:ident, $wrong_len_pk:ident, $wrong_len_sk:ident, $wrong_len_ct:ident, $corrupted_ct:ident) => {
+        fn $setup() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+            let (pk, sk) =
+                $variant::keygen_with_rng(&mut FixedRng::new(vec![3u8; 48])).expect("keygen");
+            let enc =
+                $variant::encaps_with_rng(&pk, &mut FixedRng::new(vec![7u8; 48])).expect("encaps");
+            (
+                pk.pk.clone(),
+                sk.as_ref().to_vec(),
+                enc.ciphertext.clone(),
+                enc.shared_secret.to_vec(),
+            )
+        }
 
-    let wrong_key_ss = sntrup653::decaps(&sk_b, &enc.ciphertext).expect("decaps should succeed");
-    assert_ne!(wrong_key_ss, enc.shared_secret);
+        #[test]
+        fn $wrong_len_pk() {
+            let (pk, _sk, _ct, _ss) = $setup();
+            assert!($variant::PublicKey::from_bytes(&pk).is_ok());
+            assert!($variant::PublicKey::from_bytes(&pk[..pk.len() - 1]).is_err());
+            let mut too_long = pk;
+            too_long.push(0);
+            assert!($variant::PublicKey::from_bytes(&too_long).is_err());
+        }
+
+        #[test]
+        fn $wrong_len_sk() {
+            let (_pk, sk, _ct, _ss) = $setup();
+            assert!($variant::SecretKey::from_bytes(&sk).is_ok());
+            assert!($variant::SecretKey::from_bytes(&sk[..sk.len() - 1]).is_err());
+            let mut too_long = sk;
+            too_long.push(0);
+            assert!($variant::SecretKey::from_bytes(&too_long).is_err());
+        }
+
+        #[test]
+        fn $wrong_len_ct() {
+            let (_pk, sk, ct, _ss) = $setup();
+            let sk = $variant::SecretKey::from_bytes(&sk).expect("valid sk");
+            assert!($variant::decaps(&sk, &ct).is_ok());
+            assert!($variant::decaps(&sk, &ct[..ct.len() - 1]).is_err());
+            let mut too_long = ct;
+            too_long.push(0);
+            assert!($variant::decaps(&sk, &too_long).is_err());
+        }
+
+        #[test]
+        fn $corrupted_ct() {
+            let (_pk, sk, ct, ss) = $setup();
+            let sk = $variant::SecretKey::from_bytes(&sk).expect("valid sk");
+            for i in 0..ct.len().min(4) {
+                let mut corrupted = ct.clone();
+                corrupted[i] ^= 0x01;
+                let dec = $variant::decaps(&sk, &corrupted).expect("decaps corrupted ct");
+                assert_ne!(
+                    &dec[..],
+                    ss.as_slice(),
+                    "single-bit corruption at byte {i} must change the shared secret"
+                );
+            }
+        }
+    };
 }
 
-#[test]
-fn sntrup653_negative_corrupted_ct() {
-    let (pk, _sk_a) = sntrup653::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let sk = sntrup653::SecretKey::from_bytes(_sk_a.as_ref()).unwrap();
-    let enc = sntrup653::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    for pos in [
-        0usize,
-        1,
-        enc.ciphertext.len() / 3,
-        enc.ciphertext.len() / 2,
-        enc.ciphertext.len() - 1,
-    ] {
-        let mut ct = enc.ciphertext.clone();
-        ct[pos] ^= 0xff;
-        let tampered_ss =
-            sntrup653::decaps(&sk, &ct).expect("same-length tampered ciphertext uses fallback");
-        assert_ne!(tampered_ss, enc.shared_secret, "tampered byte {pos}");
-    }
-}
-
-#[test]
-fn sntrup653_negative_invalid_ct_len() {
-    let (pk, sk) = sntrup653::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup653::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    assert_eq!(
-        sntrup653::decaps(&sk, &[]).expect_err("empty ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup653::decaps(&sk, &enc.ciphertext[..enc.ciphertext.len() - 1])
-            .expect_err("truncated ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup653::decaps(&sk, &[enc.ciphertext.as_slice(), &[0u8]].concat())
-            .expect_err("oversized ct"),
-        Error::InvalidCiphertextLength
-    );
-}
-
-#[test]
-fn sntrup653_negative_invalid_sk_len() {
-    assert!(sntrup653::SecretKey::from_bytes(&[]).is_err());
-    assert!(sntrup653::SecretKey::from_bytes(&[0u8; 1]).is_err());
-
-    let (pk, sk) = sntrup653::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup653::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
-    let ss = sntrup653::decaps(&sk, &enc.ciphertext).expect("valid decaps");
-    assert_eq!(enc.shared_secret, ss);
-}
-
-#[test]
-fn sntrup761_negative_wrong_key() {
-    let (pk_a, _sk_a) = sntrup761::keypair_from_seed(&[0x42u8; 32]).expect("keygen A");
-    let (_pk_b, sk_b) = sntrup761::keypair_from_seed(&[0x99u8; 32]).expect("keygen B");
-    let enc = sntrup761::encaps_deterministic(&pk_a, &[0x13u8; 32]).expect("encaps should succeed");
-
-    let wrong_key_ss = sntrup761::decaps(&sk_b, &enc.ciphertext).expect("decaps should succeed");
-    assert_ne!(wrong_key_ss, enc.shared_secret);
-}
-
-#[test]
-fn sntrup761_negative_corrupted_ct() {
-    let (pk, _sk_a) = sntrup761::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let sk = sntrup761::SecretKey::from_bytes(_sk_a.as_ref()).unwrap();
-    let enc = sntrup761::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    for pos in [
-        0usize,
-        1,
-        enc.ciphertext.len() / 3,
-        enc.ciphertext.len() / 2,
-        enc.ciphertext.len() - 1,
-    ] {
-        let mut ct = enc.ciphertext.clone();
-        ct[pos] ^= 0xff;
-        let tampered_ss =
-            sntrup761::decaps(&sk, &ct).expect("same-length tampered ciphertext uses fallback");
-        assert_ne!(tampered_ss, enc.shared_secret, "tampered byte {pos}");
-    }
-}
-
-#[test]
-fn sntrup761_negative_invalid_ct_len() {
-    let (pk, sk) = sntrup761::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup761::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    assert_eq!(
-        sntrup761::decaps(&sk, &[]).expect_err("empty ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup761::decaps(&sk, &enc.ciphertext[..enc.ciphertext.len() - 1])
-            .expect_err("truncated ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup761::decaps(&sk, &[enc.ciphertext.as_slice(), &[0u8]].concat())
-            .expect_err("oversized ct"),
-        Error::InvalidCiphertextLength
-    );
-}
-
-#[test]
-fn sntrup761_negative_invalid_sk_len() {
-    assert!(sntrup761::SecretKey::from_bytes(&[]).is_err());
-    assert!(sntrup761::SecretKey::from_bytes(&[0u8; 1]).is_err());
-
-    let (pk, sk) = sntrup761::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup761::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
-    let ss = sntrup761::decaps(&sk, &enc.ciphertext).expect("valid decaps");
-    assert_eq!(enc.shared_secret, ss);
-}
-
-#[test]
-fn sntrup857_negative_wrong_key() {
-    let (pk_a, _sk_a) = sntrup857::keypair_from_seed(&[0x42u8; 32]).expect("keygen A");
-    let (_pk_b, sk_b) = sntrup857::keypair_from_seed(&[0x99u8; 32]).expect("keygen B");
-    let enc = sntrup857::encaps_deterministic(&pk_a, &[0x13u8; 32]).expect("encaps should succeed");
-
-    let wrong_key_ss = sntrup857::decaps(&sk_b, &enc.ciphertext).expect("decaps should succeed");
-    assert_ne!(wrong_key_ss, enc.shared_secret);
-}
-
-#[test]
-fn sntrup857_negative_corrupted_ct() {
-    let (pk, _sk_a) = sntrup857::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let sk = sntrup857::SecretKey::from_bytes(_sk_a.as_ref()).unwrap();
-    let enc = sntrup857::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    for pos in [
-        0usize,
-        1,
-        enc.ciphertext.len() / 3,
-        enc.ciphertext.len() / 2,
-        enc.ciphertext.len() - 1,
-    ] {
-        let mut ct = enc.ciphertext.clone();
-        ct[pos] ^= 0xff;
-        let tampered_ss =
-            sntrup857::decaps(&sk, &ct).expect("same-length tampered ciphertext uses fallback");
-        assert_ne!(tampered_ss, enc.shared_secret, "tampered byte {pos}");
-    }
-}
-
-#[test]
-fn sntrup857_negative_invalid_ct_len() {
-    let (pk, sk) = sntrup857::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup857::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps should succeed");
-
-    assert_eq!(
-        sntrup857::decaps(&sk, &[]).expect_err("empty ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup857::decaps(&sk, &enc.ciphertext[..enc.ciphertext.len() - 1])
-            .expect_err("truncated ct"),
-        Error::InvalidCiphertextLength
-    );
-    assert_eq!(
-        sntrup857::decaps(&sk, &[enc.ciphertext.as_slice(), &[0u8]].concat())
-            .expect_err("oversized ct"),
-        Error::InvalidCiphertextLength
-    );
-}
-
-#[test]
-fn sntrup857_negative_invalid_sk_len() {
-    assert!(sntrup857::SecretKey::from_bytes(&[]).is_err());
-    assert!(sntrup857::SecretKey::from_bytes(&[0u8; 1]).is_err());
-
-    let (pk, sk) = sntrup857::keypair_from_seed(&[0x42u8; 32]).expect("keygen");
-    let enc = sntrup857::encaps_deterministic(&pk, &[0x13u8; 32]).expect("encaps");
-    let ss = sntrup857::decaps(&sk, &enc.ciphertext).expect("valid decaps");
-    assert_eq!(enc.shared_secret, ss);
-}
+negative_tests!(
+    sntrup653_setup,
+    sntrup653,
+    sntrup653_rejects_wrong_length_public_key,
+    sntrup653_rejects_wrong_length_secret_key,
+    sntrup653_rejects_wrong_length_ciphertext,
+    sntrup653_corrupted_ciphertext_changes_shared_secret
+);
+negative_tests!(
+    sntrup761_setup,
+    sntrup761,
+    sntrup761_rejects_wrong_length_public_key,
+    sntrup761_rejects_wrong_length_secret_key,
+    sntrup761_rejects_wrong_length_ciphertext,
+    sntrup761_corrupted_ciphertext_changes_shared_secret
+);
+negative_tests!(
+    sntrup1277_setup,
+    sntrup1277,
+    sntrup1277_rejects_wrong_length_public_key,
+    sntrup1277_rejects_wrong_length_secret_key,
+    sntrup1277_rejects_wrong_length_ciphertext,
+    sntrup1277_corrupted_ciphertext_changes_shared_secret
+);

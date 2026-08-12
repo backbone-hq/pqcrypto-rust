@@ -2,7 +2,7 @@ use crate::field::csubq;
 use crate::params::*;
 use alloc::vec;
 use alloc::vec::Vec;
-use backbone_pqcrypto_internals::secret::SecretArray;
+use backbone_pqcrypto_internals::secret::{SecretArray, SecretVec};
 
 pub(crate) struct Poly {
     pub coeffs: SecretArray<i16, N>,
@@ -165,10 +165,14 @@ impl<const K: usize> PolyVec<K> {
         r
     }
 
-    pub(crate) fn encode_12(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(K * 384);
+    /// ByteEncode_12 for every polynomial. Returns a zeroizing buffer so the
+    /// encoded secret vector s is wiped on drop; the caller may also
+    /// encode public t with the same wrapper (harmless extra wipe).
+    pub(crate) fn encode_12(&self) -> SecretVec<u8> {
+        let mut out = SecretVec::<u8>::new(K * 384);
         for i in 0..K {
-            out.extend_from_slice(&self.vec[i].encode_12());
+            let enc = self.vec[i].encode_12();
+            out[i * 384..(i + 1) * 384].copy_from_slice(&enc);
         }
         out
     }

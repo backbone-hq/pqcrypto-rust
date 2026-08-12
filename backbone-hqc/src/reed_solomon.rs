@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+// All casts in this module operate on bounded values (byte/limb extraction, loop counters).
 //! Reed-Solomon code over GF(2⁸): systematic encoder and syndrome-based decoder.
 //! The RS code has parameters (n1 = 2^M - 1 - (G - 1), k = K) correcting up to DELTA errors.
 //! Decoder uses: Berlekamp-Massey (error locator polynomial), Chien search (root finding),
@@ -5,8 +7,6 @@
 
 use crate::gf;
 use crate::params::Params;
-use alloc::vec;
-use alloc::vec::Vec;
 use backbone_pqcrypto_internals::ct::ct_gt_usize;
 use backbone_pqcrypto_internals::secret::SecretVec;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -140,8 +140,8 @@ pub(crate) fn berlekamp_massey<P: Params>(syndromes: &[u16]) -> (SecretVec<u16>,
 /// Evaluates sigma at α^{-pos} for pos = 0..N1-1.
 /// The error locator polynomial has form λ(x) = Π (1 - x·α^{pos_j}),
 /// so λ(α^{-pos_j}) = 0. We evaluate σ(α^{-pos}) for each codeword position.
-pub(crate) fn chien_search<P: Params>(sigma: &[u16]) -> Vec<bool> {
-    let mut errors = vec![false; P::N1];
+pub(crate) fn chien_search<P: Params>(sigma: &[u16]) -> SecretVec<bool> {
+    let mut errors = SecretVec::<bool>::new(P::N1);
     let alpha_inv = gf::gf_inverse(2);
     let mut beta = 1u16;
     for pos in 0..P::N1 {
@@ -149,16 +149,16 @@ pub(crate) fn chien_search<P: Params>(sigma: &[u16]) -> Vec<bool> {
         for &coeff in sigma.iter().rev() {
             val = gf::gf_mul(val, beta) ^ coeff;
         }
-        if val == 0 {
-            errors[pos] = true;
-        }
+        // Branchless root test (val is secret-derived).
+        errors[pos] = u8::conditional_select(&0u8, &1u8, val.ct_eq(&0u16)) == 1;
         beta = gf::gf_mul(beta, alpha_inv);
     }
     errors
 }
 
-/// Compute z(x) for the Forney formula: z(x) = sigma(x) * (1 + S(x)) mod x^{DELTA+1}.
-/// Where `S(x) = Σ_{i=0}^{2Δ-1} S_{i+1} * x^i = Σ_{i=0}^{2Δ-1} syndromes[i] * x^i`.
+/// Compute z(x) for the Forney formula, matching the HQC reference:
+/// z[0] = 1 and, for i >= 1, z[i] = sigma[i] ^ (sigma * S)[i-1], where
+/// `S(x) = Σ_{i=0}^{2Δ-1} syndromes[i] * x^i`.
 pub(crate) fn compute_z_poly<P: Params>(
     sigma: &[u16],
     degree: usize,
@@ -167,117 +167,86 @@ pub(crate) fn compute_z_poly<P: Params>(
     let mut z = SecretVec::<u16>::new(P::DELTA + 1);
     z[0] = 1;
 
-    z[1..=P::DELTA.min(degree)].copy_from_slice(&sigma[1..=P::DELTA.min(degree)]);
-
-    if P::DELTA >= 1 {
-        z[1] ^= syndromes[0];
-    }
-
-    for i in 2..=P::DELTA.min(degree) {
-        z[i] ^= syndromes[i - 1];
-        for j in 1..i {
-            z[i] ^= gf::gf_mul(sigma[j], syndromes[i - j - 1]);
+    // Fixed iteration bound (1..=DELTA) — `degree` is secret, so every z[i]
+    // is computed fully and then masked to zero when i > degree
+    // (bit-identical to the previous variable-length slice + loop).
+    for i in 1..=P::DELTA {
+        let mut zi = sigma[i];
+        if i == 1 {
+            zi ^= syndromes[0];
+        } else {
+            zi ^= syndromes[i - 1];
+            for j in 1..i {
+                zi ^= gf::gf_mul(sigma[j], syndromes[i - j - 1]);
+            }
         }
+        let in_degree = ct_gt_usize(degree, i - 1); // degree >= i
+        z[i] = u16::conditional_select(&0u16, &zi, in_degree);
     }
 
     z
 }
 
 /// Compute error values using the Forney formula.
-/// For each error position `p` (where `error[p]` is true):
-///   β_j = α^{-pos_j} is the error locator for position pos_j.
-///   e_j = z(α^{pos_j}) / λ'(α^{pos_j}) = z(β_j^{-1}) / Π_{k≠j} (1 - β_j^{-1}·β_k)
+/// Ported from libQ's approach: map error values directly to error positions
+/// found by Chien search, avoiding the beta-check loop.
 pub(crate) fn compute_error_values<P: Params>(
     z: &[u16],
     error_positions: &[bool],
 ) -> SecretVec<u16> {
     let mut error_values = SecretVec::<u16>::new(P::N1);
 
-    let num_errors = error_positions.iter().filter(|&&e| e).count();
-    if num_errors == 0 {
-        return error_values;
-    }
-    if num_errors > P::DELTA {
-        return error_values;
+    // Fully fixed-iteration, constant-time Forney. `pos` and `k` are public
+    // loop counters, so `pow2[pos]`/`pow2[k]` are public-indexed;
+    // the SECRET error_positions booleans only enter through
+    // `conditional_select`. Error values at non-error positions are masked
+    // to zero. Bit-identical to the previous variable-iteration form.
+    let mut pow2 = alloc::vec![0u16; P::N1];
+    let mut p = 1u16;
+    for slot in pow2.iter_mut() {
+        *slot = p;
+        p = gf::gf_mul(p, 2);
     }
 
-    let alpha_inv = gf::gf_inverse(2);
-    let mut betas = SecretVec::<u16>::new(num_errors);
-    let mut beta = 1u16;
-    let mut idx = 0;
     for pos in 0..P::N1 {
-        if error_positions[pos] {
-            betas[idx] = beta;
-            idx += 1;
-        }
-        beta = gf::gf_mul(beta, alpha_inv);
-    }
+        let beta = pow2[pos];
+        let beta_inv = gf::gf_inverse(beta);
 
-    for (i, &beta_i) in betas.iter().enumerate() {
-        let beta_i_inv = gf::gf_inverse(beta_i);
-
+        // z(β^{-1}) = Σ_{j=0}^{δ} z[j] * β^{-j}; z[0] = 1.
         let mut tmp1 = 1u16;
         let mut inv_pow = 1u16;
         for j in 1..=P::DELTA.min(z.len() - 1) {
-            inv_pow = gf::gf_mul(inv_pow, beta_i_inv);
+            inv_pow = gf::gf_mul(inv_pow, beta_inv);
             tmp1 ^= gf::gf_mul(inv_pow, z[j]);
         }
 
+        // Π_{k≠pos, error_positions[k]} (1 + β^{-1}·β_k)
         let mut tmp2 = 1u16;
-        for (k, &beta_k) in betas.iter().enumerate() {
-            if k != i {
-                tmp2 = gf::gf_mul(tmp2, 1 ^ gf::gf_mul(beta_i_inv, beta_k));
+        for k in 0..P::N1 {
+            if k == pos {
+                continue;
             }
+            let factor = 1u16 ^ gf::gf_mul(beta_inv, pow2[k]);
+            let is_other_error = Choice::from(u8::from(error_positions[k]));
+            tmp2 = u16::conditional_select(&tmp2, &gf::gf_mul(tmp2, factor), is_other_error);
         }
 
-        let e_val = if tmp2 != 0 {
-            gf::gf_mul(tmp1, gf::gf_inverse(tmp2))
-        } else {
-            0
-        };
-
-        let alpha_inv2 = gf::gf_inverse(2);
-        let mut beta_check = 1u16;
-        for pos in 0..P::N1 {
-            if error_positions[pos] && beta_check == beta_i {
-                error_values[pos] = e_val;
-                break;
-            }
-            beta_check = gf::gf_mul(beta_check, alpha_inv2);
-        }
+        let e = gf::gf_mul(tmp1, gf::gf_inverse(tmp2));
+        let e = u16::conditional_select(&0u16, &e, Choice::from(u8::from(tmp2 != 0)));
+        let e = u16::conditional_select(&0u16, &e, Choice::from(u8::from(error_positions[pos])));
+        error_values[pos] = e;
     }
 
     error_values
 }
 
-/// Correct a codeword by XORing error values at error positions.
-pub(crate) fn correct_errors(cdw: &mut [u8], error_values: &[u16]) {
-    for i in 0..cdw.len() {
-        // error_values[i] is GF(2⁸) value < 256; mask makes truncation explicit
-        cdw[i] ^= (error_values[i] & 0xFF) as u8;
-    }
-}
-
-/// Full Reed-Solomon decode pipeline.
-/// 1. Compute syndromes
-/// 2. Berlekamp-Massey → error locator polynomial sigma
-/// 3. Chien search → error positions
-/// 4. Compute z-poly → Forney numerator
-/// 5. Compute error values → Forney formula
-/// 6. Correct errors in codeword
-/// 7. Extract message from last K bytes
-///
+/// Full Reed-Solomon decode pipeline: syndromes → Berlekamp-Massey → Chien
+/// search → Forney (error values) → correct → extract last K bytes.
 /// Returns the decoded message (K bytes) in a zeroizing wrapper.
 pub(crate) fn decode<P: Params>(cdw: &mut [u8]) -> SecretVec<u8> {
     let syndromes = compute_syndromes::<P>(cdw);
 
     let (sigma, degree) = berlekamp_massey::<P>(&syndromes);
-
-    if degree > P::DELTA || sigma.len() > P::DELTA + 1 {
-        let mut msg = SecretVec::<u8>::new(P::K);
-        msg.copy_from_slice(&cdw[P::N1 - P::K..]);
-        return msg;
-    }
 
     let error_positions = chien_search::<P>(&sigma);
 
@@ -285,7 +254,14 @@ pub(crate) fn decode<P: Params>(cdw: &mut [u8]) -> SecretVec<u8> {
 
     let error_values = compute_error_values::<P>(&z, &error_positions);
 
-    correct_errors(cdw, &error_values);
+    // Constant-time correction gate: `degree > DELTA` was a secret-dependent
+    // early return; the correction is now masked to zero instead
+    // (sigma.len() is always DELTA+1, so the old second clause never fired).
+    let apply = ct_gt_usize(P::DELTA + 1, degree); // degree <= DELTA
+    for i in 0..cdw.len() {
+        let ev = u16::conditional_select(&0u16, &error_values[i], apply);
+        cdw[i] ^= (ev & 0xFF) as u8;
+    }
 
     let mut msg = SecretVec::<u8>::new(P::K);
     msg.copy_from_slice(&cdw[P::N1 - P::K..]);
@@ -296,6 +272,8 @@ pub(crate) fn decode<P: Params>(cdw: &mut [u8]) -> SecretVec<u8> {
 mod tests {
     use super::*;
     use crate::params::Hqc128;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_rs_encode_sizes() {
@@ -397,5 +375,124 @@ mod tests {
             1,
             "Should find exactly 1 error"
         );
+    }
+}
+
+#[cfg(test)]
+mod ct_probe {
+    #![allow(
+        clippy::all,
+        clippy::unwrap_used,
+        clippy::cast_lossless,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::must_use_candidate,
+        clippy::std_instead_of_alloc,
+        clippy::std_instead_of_core
+    )]
+    use super::*;
+    use crate::params::Hqc128;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use backbone_pqcrypto_internals::testutil::XorShift;
+    use std::{eprintln, println};
+
+    fn enabled() -> bool {
+        std::env::var("CT_VALIDATE").is_ok()
+    }
+
+    fn mean(v: &[u128]) -> f64 {
+        v.iter().map(|&x| x as f64).sum::<f64>() / v.len() as f64
+    }
+
+    fn variance(v: &[u128], m: f64) -> f64 {
+        v.iter()
+            .map(|&x| {
+                let d = x as f64 - m;
+                d * d
+            })
+            .sum::<f64>()
+            / (v.len() as f64 - 1.0)
+    }
+
+    fn welch_t(a: &[u128], b: &[u128]) -> f64 {
+        let na = a.len() as f64;
+        let nb = b.len() as f64;
+        let ma = mean(a);
+        let mb = mean(b);
+        (ma - mb) / (variance(a, ma) / na + variance(b, mb) / nb).sqrt()
+    }
+
+    fn measure<F: FnMut() -> u64>(blocks: usize, per: usize, mut f: F) -> Vec<u128> {
+        let mut out = Vec::with_capacity(blocks);
+        for _ in 0..blocks {
+            let t0 = std::time::Instant::now();
+            let mut acc = 0u64;
+            for _ in 0..per {
+                acc = acc.wrapping_add(core::hint::black_box(f()));
+            }
+            core::hint::black_box(acc);
+            out.push(t0.elapsed().as_nanos());
+        }
+        out
+    }
+
+    fn report(name: &str, a: &[u128], b: &[u128]) -> f64 {
+        let t = welch_t(a, b);
+        println!(
+            "[CT-VALIDATE] {name}: welch_t={t:.1} classA_mean={:.1}ns classB_mean={:.1}ns",
+            mean(a),
+            mean(b)
+        );
+        t
+    }
+
+    /// End-to-end RS decode pipeline. Class A = valid codeword pool
+    /// (light path), class B = random received word pool (full variable-time
+    /// Berlekamp-Massey + Chien + Forney).
+    #[test]
+    fn probe_rs_decode() {
+        if !enabled() {
+            eprintln!("[CT-VALIDATE] hqc RS probe skipped (set CT_VALIDATE=1)");
+            return;
+        }
+        const N: usize = 256;
+        let fixed: Vec<Vec<u8>> = core::hint::black_box(
+            (0..N)
+                .map(|_| {
+                    let mut c = vec![0u8; <Hqc128 as Params>::N1];
+                    encode::<Hqc128>(&mut c, &[0xABu8; <Hqc128 as Params>::K]);
+                    c
+                })
+                .collect(),
+        );
+        let mut rng = XorShift::new();
+        let random: Vec<Vec<u8>> = core::hint::black_box(
+            (0..N)
+                .map(|_| {
+                    (0..<Hqc128 as Params>::N1)
+                        .map(|_| (rng.next_u64() & 0xFF) as u8)
+                        .collect()
+                })
+                .collect(),
+        );
+        let mut ca = 0usize;
+        let a = measure(1200, 50, || {
+            let mut buf = fixed[ca & (N - 1)].clone();
+            ca += 1;
+            let m = decode::<Hqc128>(&mut buf);
+            u64::from(m[0])
+        });
+        let mut cb = 0usize;
+        let b = measure(1200, 50, || {
+            let mut buf = random[cb & (N - 1)].clone();
+            cb += 1;
+            let m = decode::<Hqc128>(&mut buf);
+            u64::from(m[0])
+        });
+        let t = report("hqc RS decode pipeline", &a, &b);
+        let _ = t;
     }
 }

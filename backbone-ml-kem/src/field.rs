@@ -49,6 +49,11 @@ pub(crate) fn csubq(a: i16) -> i16 {
 /// Batch csubq for all coefficients.
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     use super::*;
 
     #[test]

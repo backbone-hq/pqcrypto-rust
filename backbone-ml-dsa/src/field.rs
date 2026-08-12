@@ -1,23 +1,16 @@
-//! ML-DSA (FIPS 204) Field Operations
-//! Operations modulo Q = 8380417.
-
 pub(crate) const Q: i32 = 8380417;
 
-/// Performs conditional subtraction of Q (brings to [0, Q-1]).
 #[inline]
 pub(crate) fn csubq(a: i32) -> i32 {
     let r = a.wrapping_sub(Q);
     r + ((r >> 31) & Q)
 }
 
-/// Performs conditional addition of Q if a < 0 (fixes negative only).
 #[inline]
 pub(crate) fn caddq(a: i32) -> i32 {
     a + ((a >> 31) & Q)
 }
 
-/// Montgomery reduction: returns a * R^-1 mod Q.
-/// R = 2^32.
 #[inline]
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     // SAFETY: Montgomery reduction intentionally uses the lower 32 bits of `a`.
@@ -27,8 +20,6 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     i32::try_from(t).expect("value fits in i32")
 }
 
-/// reduce32: narrow a to approx [-6283008, 6283008] (matching C ref).
-/// Used before invntt_tomont to keep coefficients in a safe range.
 #[inline]
 pub(crate) fn reduce32(a: i32) -> i32 {
     let t = (i64::from(a) + (1 << 22)) >> 23;

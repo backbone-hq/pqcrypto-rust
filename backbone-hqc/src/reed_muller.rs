@@ -3,40 +3,32 @@
 use crate::params::*;
 
 fn encode_byte(cword: &mut [u64], message: u8) {
-    let mut first = if (message >> 7) & 1 != 0 {
-        0xFFFFFFFFu32
-    } else {
-        0
-    };
-    if message & 1 != 0 {
-        first ^= 0xAAAAAAAA;
-    }
-    if (message >> 1) & 1 != 0 {
-        first ^= 0xCCCCCCCC;
-    }
-    if (message >> 2) & 1 != 0 {
-        first ^= 0xF0F0F0F0;
-    }
-    if (message >> 3) & 1 != 0 {
-        first ^= 0xFF00FF00;
-    }
-    if (message >> 4) & 1 != 0 {
-        first ^= 0xFFFF0000;
-    }
+    // Constant-time RM(1,7) encode: the previous if-based XORs branched on
+    // secret message bits during decaps (FO re-encryption of m'). Each mask
+    // is all-ones iff the bit is set, so the XOR chain is branchless and
+    // bit-identical to the reference's branchy form.
+    let m0 = 0u32.wrapping_sub(u32::from(message & 1));
+    let m1 = 0u32.wrapping_sub(u32::from((message >> 1) & 1));
+    let m2 = 0u32.wrapping_sub(u32::from((message >> 2) & 1));
+    let m3 = 0u32.wrapping_sub(u32::from((message >> 3) & 1));
+    let m4 = 0u32.wrapping_sub(u32::from((message >> 4) & 1));
+    let m5 = 0u32.wrapping_sub(u32::from((message >> 5) & 1));
+    let m6 = 0u32.wrapping_sub(u32::from((message >> 6) & 1));
+    let m7 = 0u32.wrapping_sub(u32::from((message >> 7) & 1));
+
+    let mut first = m7;
+    first ^= m0 & 0xAAAAAAAA;
+    first ^= m1 & 0xCCCCCCCC;
+    first ^= m2 & 0xF0F0F0F0;
+    first ^= m3 & 0xFF00FF00;
+    first ^= m4 & 0xFFFF0000;
     cword[0] = u64::from(first);
 
-    if (message >> 5) & 1 != 0 {
-        first ^= 0xFFFFFFFF;
-    }
-    cword[0] |= u64::from(first) << 32;
-    if (message >> 6) & 1 != 0 {
-        first ^= 0xFFFFFFFF;
-    }
-    cword[1] = u64::from(first) << 32;
-    if (message >> 5) & 1 != 0 {
-        first ^= 0xFFFFFFFF;
-    }
-    cword[1] |= u64::from(first);
+    let first5 = first ^ m5;
+    cword[0] |= u64::from(first5) << 32;
+    let first6 = first5 ^ m6;
+    cword[1] = u64::from(first6) << 32;
+    cword[1] |= u64::from(first6 ^ m5);
 }
 
 /// The message has N1 bytes, each encoded into an RM(1,7) codeword repeated MULTIPLICITY times.
@@ -123,6 +115,11 @@ pub(crate) fn decode<P: Params>(msg: &mut [u8], cdw: &[u64]) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     use super::*;
     use crate::params::Hqc128;
 

@@ -1,56 +1,26 @@
 //! SPHINCS+ signature error types.
 
-use core::fmt;
+use backbone_pqcrypto_internals::define_error;
 
-use backbone_pqcrypto_internals::{error::PqcErrorKind, impl_pqc_error};
-
-/// SPHINCS+ signature errors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error {
+define_error! {
+    /// SPHINCS+ signature errors.
+    Error;
     /// Signature verification failed.
-    InvalidSignature,
+    InvalidSignature => "invalid signature",
     /// Signing failed after exhausting rejection sampling retries.
-    SigningFailed,
+    SigningFailed => "signing failed (rejection sampling exhausted)",
     /// RNG failure (getrandom failure).
-    RngFailure,
+    RngFailure => "random number generation failed",
     /// The public key has an invalid length.
-    InvalidKeyLength,
+    InvalidKeyLength => "invalid public key length",
     /// The secret key has an invalid length.
-    InvalidSecretKeyLength,
+    InvalidSecretKeyLength => "invalid secret key length",
     /// The signature has an invalid length.
-    InvalidSignatureLength,
+    InvalidSignatureLength => "invalid signature length",
     /// The supplied seed has an invalid length.
-    InvalidSeedLength,
+    InvalidSeedLength => "invalid seed length",
     /// The supplied context is too long for the FIPS domain separator.
-    InvalidContextLength,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::InvalidSignature => write!(f, "invalid signature"),
-            Error::SigningFailed => write!(f, "signing failed (rejection sampling exhausted)"),
-            Error::RngFailure => write!(f, "random number generation failed"),
-            Error::InvalidKeyLength => write!(f, "invalid public key length"),
-            Error::InvalidSecretKeyLength => write!(f, "invalid secret key length"),
-            Error::InvalidSignatureLength => write!(f, "invalid signature length"),
-            Error::InvalidSeedLength => write!(f, "invalid seed length"),
-            Error::InvalidContextLength => write!(f, "invalid context length"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl core::error::Error for Error {}
-
-impl_pqc_error! {
-    Error,
-    InvalidSignature => PqcErrorKind::InvalidSignature,
-    SigningFailed => PqcErrorKind::SigningFailed,
-    RngFailure => PqcErrorKind::RngFailure,
-    InvalidKeyLength => PqcErrorKind::InvalidKeyLength,
-    InvalidSecretKeyLength => PqcErrorKind::InvalidSecretKeyLength,
-    InvalidSignatureLength => PqcErrorKind::InvalidSignatureLength,
-    InvalidSeedLength => PqcErrorKind::InvalidSeedLength,
-    InvalidContextLength => PqcErrorKind::InvalidContextLength,
+    InvalidContextLength => "invalid context length",
+    /// Internal invariant failure (address serialization or PRF setup).
+    Internal => "internal invariant failure",
 }

@@ -1,26 +1,27 @@
 /// Macro to generate the public API for an ML-DSA variant module.
 ///
 /// Generates `PublicKey`, `SecretKey`, `Signature` types, along with
-/// `keygen`, `keypair_from_seed`, `sign`, `sign_deterministic`, `verify`,
-/// `AsRef` impls, and inline tests.
+/// `keygen`, `keygen_with_rng`, `sign`, `sign_with_rng`, `verify`, `AsRef` impls,
+/// and inline tests.
 ///
 /// `$params`: The Params implementor (e.g. `Mldsa44`).
 /// `$doc_variant`: Display name for doc comments (e.g. `"ML-DSA-44"`).
-/// `$doc_sec`: Security category (e.g. `"1"`).
 #[macro_export]
 macro_rules! define_variant {
-    ($params:ident, $doc_variant:expr, $doc_sec:expr) => {
+    ($params:ident, $doc_variant:expr) => {
+        use alloc::vec;
         use alloc::vec::Vec;
+        use backbone_pqcrypto_internals::oid::HashAlgorithm;
         use $crate::error::Error;
         use $crate::params::$params;
         use $crate::params::Params;
-        use sha3::{digest::ExtendableOutput, digest::Update, digest::XofReader, Shake256};
-        #[cfg(feature = "zeroize")]
+        use $crate::rand_core::CryptoRngCore;
+
         use zeroize::Zeroize;
 
         #[doc = concat!($doc_variant, " secret key.")]
-        #[cfg_attr(feature = "zeroize", derive(Zeroize))]
-        #[cfg_attr(feature = "zeroize", zeroize(drop))]
+        #[derive(Zeroize)]
+        #[zeroize(drop)]
         pub struct SecretKey {
             sk: Vec<u8>,
         }
@@ -34,36 +35,33 @@ macro_rules! define_variant {
         }
 
         #[doc = concat!($doc_variant, " public key.")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct PublicKey {
+            #[doc = concat!("Raw ", $doc_variant, " public key bytes.")]
             pub pk: Vec<u8>,
         }
 
         #[doc = concat!($doc_variant, " signature.")]
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub struct Signature {
+            #[doc = concat!("Raw ", $doc_variant, " signature bytes.")]
             pub sig: Vec<u8>,
         }
 
         impl SecretKey {
             #[doc = concat!("Construct an ", $doc_variant, " secret key from raw bytes.")]
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$params as Params>::SECRET_KEY_BYTES {
+                if bytes.len() != <$params as Params>::SK_BYTES {
                     return Err(Error::InvalidSecretKeyLength);
                 }
                 Ok(Self { sk: bytes.to_vec() })
-            }
-
-            #[doc = concat!("Return the raw ", $doc_variant, " secret key bytes.")]
-            pub fn as_bytes(&self) -> &[u8] {
-                &self.sk
             }
         }
 
         impl PublicKey {
             #[doc = concat!("Construct an ", $doc_variant, " public key from raw bytes.")]
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$params as Params>::PUBLIC_KEY_BYTES {
+                if bytes.len() != <$params as Params>::PK_BYTES {
                     return Err(Error::InvalidKeyLength);
                 }
                 Ok(Self { pk: bytes.to_vec() })
@@ -73,191 +71,142 @@ macro_rules! define_variant {
         impl Signature {
             #[doc = concat!("Construct an ", $doc_variant, " signature from raw bytes.")]
             pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-                if bytes.len() != <$params as Params>::SIGNATURE_BYTES {
+                if bytes.len() != <$params as Params>::SIG_BYTES {
                     return Err(Error::InvalidSignatureLength);
                 }
-                Ok(Self { sig: bytes.to_vec() })
+                Ok(Self {
+                    sig: bytes.to_vec(),
+                })
             }
         }
 
-        #[doc = concat!("Generate an ", $doc_variant, " keypair deterministically from a 32-byte seed.")]
-        pub fn keygen(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            if seed.len() != 32 {
-                return Err(Error::InvalidSeedLength);
-            }
+        /// Key-generation seed length in bytes — the single source of truth for
+        /// both `keygen()` (system randomness) and `keygen_with_rng()` (caller RNG).
+        const KEYGEN_SEED_LEN: usize = 32;
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using system randomness.")]
+        pub fn keygen() -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = [0u8; KEYGEN_SEED_LEN];
+            getrandom::getrandom(&mut seed).map_err(|_| Error::RngFailure)?;
+            keygen_with_seed(&seed)
+        }
+
+        #[doc = concat!("Generate an ", $doc_variant, " keypair using a caller-provided RNG.")]
+        #[doc = "Draws exactly `KEYGEN_SEED_LEN` bytes from `rng` (the FIPS 204 `xi`)."]
+        pub fn keygen_with_rng(
+            rng: &mut impl CryptoRngCore,
+        ) -> Result<(PublicKey, SecretKey), Error> {
+            let mut seed = [0u8; KEYGEN_SEED_LEN];
+            rng.try_fill_bytes(&mut seed)
+                .map_err(|_| Error::RngFailure)?;
+            keygen_with_seed(&seed)
+        }
+
+        fn keygen_with_seed(seed: &[u8; KEYGEN_SEED_LEN]) -> Result<(PublicKey, SecretKey), Error> {
             let (pk, sk) = $crate::sign::keygen::<$params>(seed);
             Ok((PublicKey { pk }, SecretKey { sk }))
         }
 
-        #[doc = concat!("Generate an ", $doc_variant, " keypair from a 32-byte seed.")]
-        pub fn keygen_checked(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen(seed)
-        }
-
-        pub fn keypair_from_seed(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen(seed)
-        }
-
-        pub fn keypair_from_seed_checked(seed: &[u8]) -> Result<(PublicKey, SecretKey), Error> {
-            keygen_checked(seed)
-        }
-
-        #[doc = concat!("Sign a message using ", $doc_variant, ".")]
-        pub fn sign(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
-            let mut rnd = [0u8; 32];
-            getrandom::getrandom(&mut rnd).map_err(|_| Error::RngFailure)?;
-            let sig = $crate::sign::sign::<$params>(sk.as_ref(), msg, &[0u8, 0u8], &rnd)?;
-            Ok(Signature { sig })
-        }
-
-        #[doc = concat!("Sign a message using ", $doc_variant, " in pure mode.")]
-        pub fn sign_pure(sk: &SecretKey, msg: &[u8]) -> Result<Signature, Error> {
-            sign(sk, msg)
-        }
-
-        #[doc = concat!("Sign a message using ", $doc_variant, " with a specific seed.")]
-        pub fn sign_deterministic(
+        #[doc = concat!("Sign a message using ", $doc_variant, " with system randomness.")]
+        pub fn sign(
             sk: &SecretKey,
             msg: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let rnd: [u8; 32] = seed.try_into().map_err(|_| Error::InvalidSeedLength)?;
-            let sig = $crate::sign::sign::<$params>(sk.as_ref(), msg, &[0u8, 0u8], &rnd)?;
-            Ok(Signature { sig })
-        }
-
-        #[doc = concat!("Sign a message using ", $doc_variant, " in pure deterministic mode.")]
-        pub fn sign_deterministic_pure(
-            sk: &SecretKey,
-            msg: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            sign_deterministic(sk, msg, seed)
-        }
-
-        #[doc = concat!("Sign a message using ", $doc_variant, " with a FIPS 204 context.")]
-        pub fn sign_with_context(
-            sk: &SecretKey,
-            msg: &[u8],
-            ctx: &[u8],
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
         ) -> Result<Signature, Error> {
             let mut rnd = [0u8; 32];
             getrandom::getrandom(&mut rnd).map_err(|_| Error::RngFailure)?;
-            sign_deterministic_with_context(sk, msg, ctx, &rnd)
+            sign_with_rnd(sk, msg, &rnd, context, hash_algorithm)
         }
 
-        #[doc = concat!("Sign a message using ", $doc_variant, " with a FIPS 204 context and specific randomness.")]
-        pub fn sign_deterministic_with_context(
+        #[doc = concat!("Sign a message using ", $doc_variant, " with a caller-provided RNG.")]
+        #[doc = "Draws the 32-byte randomizer `rnd` from `rng`."]
+        pub fn sign_with_rng(
             sk: &SecretKey,
             msg: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
+            rng: &mut impl CryptoRngCore,
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
         ) -> Result<Signature, Error> {
-            let rnd: [u8; 32] = seed.try_into().map_err(|_| Error::InvalidSeedLength)?;
-            let prefix = $crate::sign::domain_prefix(ctx, None)?;
-            let sig = $crate::sign::sign::<$params>(sk.as_ref(), msg, &prefix, &rnd)?;
-            Ok(Signature { sig })
+            let mut rnd = [0u8; 32];
+            rng.try_fill_bytes(&mut rnd)
+                .map_err(|_| Error::RngFailure)?;
+            sign_with_rnd(sk, msg, &rnd, context, hash_algorithm)
         }
 
-        #[doc = concat!("Sign a prehashed message using ", $doc_variant, " with a FIPS 204 context and OID.")]
-        pub fn sign_prehashed_with_context(
-            sk: &SecretKey,
-            prehash_oid: &[u8],
-            prehash: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
-        ) -> Result<Signature, Error> {
-            let rnd: [u8; 32] = seed.try_into().map_err(|_| Error::InvalidSeedLength)?;
-            let prefix = $crate::sign::domain_prefix(ctx, Some((prehash_oid, prehash)))?;
-            let sig = $crate::sign::sign::<$params>(sk.as_ref(), &[], &prefix, &rnd)?;
-            Ok(Signature { sig })
-        }
-
-        #[doc = concat!("Sign a message with HashML-DSA-SHAKE-256 using ", $doc_variant, ".")]
-        pub fn sign_prehashed_shake256_with_context(
+        fn sign_with_rnd(
             sk: &SecretKey,
             msg: &[u8],
-            ctx: &[u8],
-            seed: &[u8],
+            rnd: &[u8; 32],
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
         ) -> Result<Signature, Error> {
-            let mut ph = [0u8; 64];
-            let mut shake = Shake256::default();
-            shake.update(msg);
-            let mut reader = shake.finalize_xof();
-            reader.read(&mut ph);
-            sign_prehashed_with_context(sk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, ctx, seed)
+            let (prefix, msg_inner) = match hash_algorithm {
+                Some(o) => {
+                    // FIPS 204 §5.4.1 (Alg. 4): the HashML-DSA message input is
+                    // M' = 0x01 ∥ ctx_len ∥ ctx ∥ OID ∥ H(M) with NO leading
+                    // 0x00 ∥ 0x00, so mu = H(tr ∥ M') via an empty prefix.
+                    let m = $crate::sign::domain_prefix(
+                        context.unwrap_or(&[]),
+                        Some((o.der_bytes(), msg)),
+                    )?;
+                    (Vec::new(), m)
+                }
+                None => {
+                    let prefix = match context {
+                        Some(c) => $crate::sign::domain_prefix(c, None)?,
+                        None => vec![0u8, 0u8],
+                    };
+                    (prefix, msg.to_vec())
+                }
+            };
+            let sig = $crate::sign::sign::<$params>(sk.as_ref(), &msg_inner, &prefix, rnd)?;
+            Ok(Signature { sig })
         }
 
         #[doc = concat!("Verify a ", $doc_variant, " signature.")]
-        #[must_use]
-        pub fn verify(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            $crate::sign::verify::<$params>(&pk.pk, msg, &signature.sig)
-        }
-
-        #[doc = concat!("Verify a ", $doc_variant, " signature and return a validation error on malformed raw input.")]
-        pub fn verify_result(pk: &PublicKey, msg: &[u8], signature: &Signature) -> Result<(), Error> {
-            if pk.pk.len() != <$params as Params>::PUBLIC_KEY_BYTES {
+        pub fn verify(
+            pk: &PublicKey,
+            msg: &[u8],
+            signature: &Signature,
+            context: Option<&[u8]>,
+            hash_algorithm: Option<HashAlgorithm>,
+        ) -> Result<(), Error> {
+            if pk.pk.len() != <$params as Params>::PK_BYTES {
                 return Err(Error::InvalidKeyLength);
             }
-            if signature.sig.len() != <$params as Params>::SIGNATURE_BYTES {
+            if signature.sig.len() != <$params as Params>::SIG_BYTES {
                 return Err(Error::InvalidSignatureLength);
             }
-            if $crate::sign::verify::<$params>(&pk.pk, msg, &signature.sig) {
+            let (prefix, msg_inner) = match hash_algorithm {
+                Some(o) => {
+                    // FIPS 204 §5.4.1 (Alg. 4): the HashML-DSA message input is
+                    // M' = 0x01 ∥ ctx_len ∥ ctx ∥ OID ∥ H(M) with NO leading
+                    // 0x00 ∥ 0x00, so mu = H(tr ∥ M') via an empty prefix.
+                    let m = $crate::sign::domain_prefix(
+                        context.unwrap_or(&[]),
+                        Some((o.der_bytes(), msg)),
+                    )?;
+                    (Vec::new(), m)
+                }
+                None => {
+                    let prefix = match context {
+                        Some(c) => $crate::sign::domain_prefix(c, None)?,
+                        None => vec![0u8, 0u8],
+                    };
+                    (prefix, msg.to_vec())
+                }
+            };
+            if $crate::sign::verify_with_prefix::<$params>(
+                &pk.pk,
+                &msg_inner,
+                &prefix,
+                &signature.sig,
+            ) {
                 Ok(())
             } else {
                 Err(Error::InvalidSignature)
             }
-        }
-
-        #[doc = concat!("Verify a ", $doc_variant, " pure-mode signature.")]
-        #[must_use]
-        pub fn verify_pure(pk: &PublicKey, msg: &[u8], signature: &Signature) -> bool {
-            verify(pk, msg, signature)
-        }
-
-        #[doc = concat!("Verify a ", $doc_variant, " signature with a FIPS 204 context.")]
-        #[must_use]
-        pub fn verify_with_context(
-            pk: &PublicKey,
-            msg: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let Ok(prefix) = $crate::sign::domain_prefix(ctx, None) else {
-                return false;
-            };
-            $crate::sign::verify_with_prefix::<$params>(&pk.pk, msg, &prefix, &signature.sig)
-        }
-
-        #[doc = concat!("Verify a prehashed ", $doc_variant, " signature with a FIPS 204 context and OID.")]
-        #[must_use]
-        pub fn verify_prehashed_with_context(
-            pk: &PublicKey,
-            prehash_oid: &[u8],
-            prehash: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let Ok(prefix) = $crate::sign::domain_prefix(ctx, Some((prehash_oid, prehash))) else {
-                return false;
-            };
-            $crate::sign::verify_with_prefix::<$params>(&pk.pk, &[], &prefix, &signature.sig)
-        }
-
-        #[doc = concat!("Verify a HashML-DSA-SHAKE-256 signature using ", $doc_variant, ".")]
-        #[must_use]
-        pub fn verify_prehashed_shake256_with_context(
-            pk: &PublicKey,
-            msg: &[u8],
-            signature: &Signature,
-            ctx: &[u8],
-        ) -> bool {
-            let mut ph = [0u8; 64];
-            let mut shake = Shake256::default();
-            shake.update(msg);
-            let mut reader = shake.finalize_xof();
-            reader.read(&mut ph);
-            verify_prehashed_with_context(pk, &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c], &ph, signature, ctx)
         }
 
         impl AsRef<[u8]> for PublicKey {
@@ -276,53 +225,142 @@ macro_rules! define_variant {
             }
         }
 
+        impl TryFrom<&[u8]> for PublicKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for SecretKey {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for Signature {
+            type Error = Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Error> {
+                Self::from_bytes(bytes)
+            }
+        }
+
         #[cfg(test)]
         mod tests {
             use super::*;
+            use backbone_pqcrypto_internals::kat::FixedRng;
 
             #[test]
-            fn test_keygen_deterministic() {
+            fn test_keygen_with_rng() {
                 let seed = b"0123456789abcdef0123456789abcdef";
-                let (pk1, sk1) = keygen(seed).unwrap();
-                let (pk2, sk2) = keygen(seed).unwrap();
+                let (pk1, sk1) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let (pk2, sk2) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
                 assert_eq!(pk1.pk, pk2.pk);
                 assert_eq!(sk1.as_ref(), sk2.as_ref());
             }
 
             #[test]
             fn test_keygen_different_seeds() {
-                let (pk1, _) =
-                    keygen(b"seed1234567890123456789012345678").unwrap();
-                let (pk2, _) =
-                    keygen(b"SEED1234567890123456789012345678").unwrap();
+                let (pk1, _) = keygen_with_rng(&mut FixedRng::new(
+                    b"seed1234567890123456789012345678".to_vec(),
+                ))
+                .unwrap();
+                let (pk2, _) = keygen_with_rng(&mut FixedRng::new(
+                    b"SEED1234567890123456789012345678".to_vec(),
+                ))
+                .unwrap();
                 assert_ne!(pk1.pk, pk2.pk);
             }
 
             #[test]
             fn test_sign_verify_roundtrip() {
                 let seed = b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-                let (pk, sk) = keygen(seed).unwrap();
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
                 let msg = b"post-quantum ready";
-                let sig = sign_deterministic(&sk, msg, &[0u8; 32]).unwrap();
-                assert!(verify(&pk, msg, &sig));
+                let sig =
+                    sign_with_rng(&sk, msg, &mut FixedRng::new(vec![0u8; 32]), None, None).unwrap();
+                assert!(verify(&pk, msg, &sig, None, None).is_ok());
             }
 
             #[test]
             fn test_verify_wrong_message() {
                 let seed = b"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
-                let (pk, sk) = keygen(seed).unwrap();
-                let sig = sign_deterministic(&sk, b"original message", &[0u8; 32]).unwrap();
-                assert!(!verify(&pk, b"wrong message", &sig));
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let sig = sign_with_rng(
+                    &sk,
+                    b"original message",
+                    &mut FixedRng::new(vec![0u8; 32]),
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert!(verify(&pk, b"wrong message", &sig, None, None).is_err());
             }
 
             #[test]
             fn test_verify_wrong_key() {
                 let seed_a = b"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
                 let seed_b = b"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD";
-                let (pk_a, _) = keygen(seed_a).unwrap();
-                let (_, sk_b) = keygen(seed_b).unwrap();
-                let sig = sign_deterministic(&sk_b, b"msg", &[0u8; 32]).unwrap();
-                assert!(!verify(&pk_a, b"msg", &sig));
+                let (pk_a, _) = keygen_with_rng(&mut FixedRng::new(seed_a.to_vec())).unwrap();
+                let (_, sk_b) = keygen_with_rng(&mut FixedRng::new(seed_b.to_vec())).unwrap();
+                let sig =
+                    sign_with_rng(&sk_b, b"msg", &mut FixedRng::new(vec![0u8; 32]), None, None)
+                        .unwrap();
+                assert!(verify(&pk_a, b"msg", &sig, None, None).is_err());
+            }
+
+            #[test]
+            fn test_negative_corrupted_sig() {
+                let seed = b"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let msg = b"hello ml-dsa negative test";
+                let sig = sign(&sk, msg, None, None).unwrap();
+                assert!(verify(&pk, msg, &sig, None, None).is_ok());
+                let mut bad_bytes = sig.sig.clone();
+                let corrupt_idx = 40 % bad_bytes.len();
+                bad_bytes[corrupt_idx] ^= 0x01;
+                let bad_sig = Signature { sig: bad_bytes };
+                assert!(
+                    verify(&pk, msg, &bad_sig, None, None).is_err(),
+                    "verify should reject corrupted sig"
+                );
+            }
+
+            #[test]
+            fn test_negative_truncated_sig() {
+                let seed = b"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let msg = b"hello ml-dsa negative test";
+                let sig = sign(&sk, msg, None, None).unwrap();
+                assert!(verify(&pk, msg, &sig, None, None).is_ok());
+                let empty_sig = Signature { sig: vec![] };
+                assert!(
+                    verify(&pk, msg, &empty_sig, None, None).is_err(),
+                    "verify should reject empty sig"
+                );
+                let half_sig = Signature {
+                    sig: sig.sig[..sig.sig.len() / 2].to_vec(),
+                };
+                assert!(
+                    verify(&pk, msg, &half_sig, None, None).is_err(),
+                    "verify should reject truncated sig"
+                );
+            }
+
+            #[test]
+            fn test_negative_empty_msg() {
+                let seed = b"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
+                let (pk, sk) = keygen_with_rng(&mut FixedRng::new(seed.to_vec())).unwrap();
+                let msg = b"";
+                let sig = sign(&sk, msg, None, None).unwrap();
+                assert!(
+                    verify(&pk, msg, &sig, None, None).is_ok(),
+                    "empty message should verify"
+                );
             }
         }
     };

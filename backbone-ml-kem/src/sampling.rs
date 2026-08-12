@@ -1,5 +1,5 @@
 use crate::params::*;
-use backbone_pqcrypto_internals::secret::SecretVec;
+use backbone_pqcrypto_internals::secret::{SecretArray, SecretVec};
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
     Shake256,
@@ -12,12 +12,12 @@ pub(crate) fn sample_cbd(seed_32: &[u8; 32], eta: usize, nonce: u8) -> [i16; 256
     let buflen = 4 * eta * N / 8;
     let mut buf = SecretVec::<u8>::new(buflen);
 
-    let mut input = [0u8; 33];
+    let mut input = SecretArray::<u8, 33>::new();
     input[..32].copy_from_slice(seed_32);
     input[32] = nonce;
 
     let mut hasher = Shake256::default();
-    hasher.update(&input);
+    hasher.update(input.as_ref());
     let mut reader = hasher.finalize_xof();
     reader.read(&mut buf);
 

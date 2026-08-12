@@ -1,10 +1,6 @@
 use crate::poly::Poly;
 use sha3::{digest::ExtendableOutput, digest::Update, digest::XofReader, Shake256};
 
-/// FIPS 204 Algorithm 13: SamplePolyEta
-/// Sample polynomial coefficients in [-η, η] using SHAKE-256 rejection sampling
-/// Nonce is a 16-bit value absorbed in little-endian (matching C reference).
-/// Uses both nibbles of each byte, matching the reference's mld_rej_eta_c.
 pub(crate) fn sample_poly_eta(poly: &mut Poly, seed: &[u8], nonce: u16, eta: usize) {
     let mut shake = Shake256::default();
     shake.update(seed);
@@ -41,9 +37,6 @@ pub(crate) fn sample_poly_eta(poly: &mut Poly, seed: &[u8], nonce: u16, eta: usi
     }
 }
 
-/// FIPS 204 Algorithm 14: SamplePolyGamma1
-/// Sample masking polynomial y with coefficients in [-(γ₁-1), γ₁-1]
-/// Matches reference: squeeze fixed blocks, interpret as packed z coefficients.
 pub(crate) fn sample_poly_gamma1(poly: &mut Poly, seed: &[u8], nonce: u16, gamma1: usize) {
     use sha3::digest::ExtendableOutput;
     let shake_rate = 136;
@@ -101,8 +94,6 @@ pub(crate) fn sample_poly_gamma1(poly: &mut Poly, seed: &[u8], nonce: u16, gamma
     }
 }
 
-/// FIPS 204 Algorithm 15: SamplePolyChallenge
-/// Challenge polynomial with exactly τ coefficients set to ±1
 pub(crate) fn sample_poly_challenge(poly: &mut Poly, seed: &[u8], tau: usize) {
     let mut shake = Shake256::default();
     shake.update(seed);

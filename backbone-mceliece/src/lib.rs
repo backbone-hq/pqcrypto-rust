@@ -1,15 +1,12 @@
 //! Pure Rust implementations of McEliece KEM variants
 #![no_std]
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss
-)]
+#![deny(missing_docs)]
 
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
+pub use rand_core;
 pub(crate) mod common;
 pub(crate) mod core_fft;
 pub(crate) mod decode;

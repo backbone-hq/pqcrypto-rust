@@ -1,13 +1,15 @@
 [package]
 name = "backbone-hqc"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
-description = "HQC (FIPS 209) implementation: Hamming Quasi-Cyclic KEM."
+rust-version.workspace = true
+description = "HQC (FIPS 207) implementation: Hamming Quasi-Cyclic KEM."
 categories = ["cryptography", "no-std"]
-keywords = ["hqc", "fips-209", "kem", "post-quantum", "code-based"]
+keywords = ["hqc", "fips-207", "kem", "post-quantum", "code-based"]
 exclude = ["tests/"]
 
 [lints]
@@ -15,21 +17,20 @@ workspace = true
 
 [dependencies]
 safe_arch = { version = "1", optional = true }
-backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.1", path = "../backbone-pqcrypto-internals", default-features = false }
 subtle = { workspace = true }
 zeroize = { workspace = true }
 sha3 = { workspace = true, default-features = false }
 getrandom = { workspace = true }
+rand_core = { workspace = true }
 
 [features]
-default = ["std", "zeroize"]
+default = ["std"]
 std = [
   "alloc",
   "sha3/std",
-  "zeroize/alloc",
   "backbone-pqcrypto-internals/std",
   "getrandom/std",
 ]
-alloc = ["zeroize/alloc"]
-zeroize = ["backbone-pqcrypto-internals/zeroize"]
+alloc = []
 simd = ["safe_arch"]

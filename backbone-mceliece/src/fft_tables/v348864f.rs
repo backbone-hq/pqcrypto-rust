@@ -1,3 +1,6 @@
+//! FFT tables for McEliece 348864f.
+//! See `mod.rs` (module doc) for provenance and regeneration guidance.
+
 pub(crate) const FFT_CONSTS_348864F: [[u64; 12]; 63] = [
     [
         0xf00f0ff0f00f0ff0,

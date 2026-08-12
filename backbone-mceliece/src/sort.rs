@@ -1,26 +1,11 @@
-/// Constant-time sorting networks for McEliece secret data.
-///
-/// ## CT analysis: `uint64_sort`
-///
-/// Batcher's odd-even mergesort using arithmetic min/max pairs. All loop
-/// bounds are derived from `n` (array length — a compile-time constant for
-/// all call sites), not from element values. The comparison function
-/// `uint64_minmax_pair` uses only arithmetic operations (`wrapping_sub`,
-/// shifts, XOR) — no branches, no data-dependent control flow.
-///
-/// This is safe for sorting secret-derived data because:
-/// - The number of comparisons is fixed for a given `n`.
-/// - The comparison order is fixed (a Batcher network).
-/// - No element is ever compared to itself based on its value.
-///
-/// The name `uint64_sort` follows the original C reference naming.
-/// Verified 2025-06-15: constant-time against value-level timing side
-/// channels. All loop bounds depend only on `n`, never on `values[]`.
-///
-/// Constant-time sorting network for `[i32]`. Loop bounds depend only on the
-/// array length `n` (a compile-time constant at all call sites), never on
-/// element values. Comparison uses `int32_minmax_pair`, which is branch-free.
-/// Safe for secret-derived data.
+//! Constant-time sorting networks for McEliece secret data.
+//!
+//! Batcher's odd-even mergesort using arithmetic min/max pairs: the number
+//! and order of comparisons depend only on the array length `n` (a
+//! compile-time constant at every call site), never on element values, so
+//! sorting secret-derived data is safe from value-level timing side
+//! channels. Verified 2025-06-15. Function names follow the C reference
+//! (`uint64_sort`).
 pub(crate) fn int32_min(x: i32, y: i32) -> i32 {
     let xy = y ^ x;
     let mut z = y.wrapping_sub(x);
@@ -39,6 +24,7 @@ fn int32_minmax_pair(x: i32, y: i32) -> (i32, i32) {
     (x ^ z, y ^ z)
 }
 
+/// Constant-time sorting network for `[i32]` (see module doc).
 pub(crate) fn int32_sort(values: &mut [i32]) {
     let n = values.len();
     if n < 2 {
@@ -92,6 +78,7 @@ fn uint64_minmax_pair(a: u64, b: u64) -> (u64, u64) {
     (a ^ c, b ^ c)
 }
 
+/// Constant-time sorting network for `[u64]` (see module doc).
 pub(crate) fn uint64_sort(values: &mut [u64]) {
     let n = values.len();
     if n < 2 {

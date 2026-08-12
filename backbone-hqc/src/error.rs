@@ -1,48 +1,20 @@
 //! HQC error types.
 
-use core::fmt;
+use backbone_pqcrypto_internals::define_error;
 
-use backbone_pqcrypto_internals::{error::PqcErrorKind, impl_pqc_error};
-
-/// Errors that can occur during HQC key generation, encapsulation, or decapsulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error {
+define_error! {
+    /// Errors that can occur during HQC key generation, encapsulation, or decapsulation.
+    Error;
     /// Public key has wrong length.
-    InvalidKeyLength,
+    InvalidKeyLength => "invalid public key length",
     /// Secret key has wrong length.
-    InvalidSecretKeyLength,
+    InvalidSecretKeyLength => "invalid secret key length",
     /// Ciphertext has wrong length.
-    InvalidCiphertextLength,
+    InvalidCiphertextLength => "invalid ciphertext length",
     /// Seed has wrong length.
-    InvalidSeedLength,
+    InvalidSeedLength => "invalid seed length",
     /// Decapsulation failed (re-encryption mismatch).
-    DecapsulationFailed,
+    DecapsulationFailed => "decapsulation failed",
     /// Random number generation failed.
-    RngFailure,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::InvalidKeyLength => write!(f, "invalid public key length"),
-            Error::InvalidSecretKeyLength => write!(f, "invalid secret key length"),
-            Error::InvalidCiphertextLength => write!(f, "invalid ciphertext length"),
-            Error::InvalidSeedLength => write!(f, "invalid seed length"),
-            Error::DecapsulationFailed => write!(f, "decapsulation failed"),
-            Error::RngFailure => write!(f, "random number generation failed"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl core::error::Error for Error {}
-
-impl_pqc_error! {
-    Error,
-    InvalidKeyLength => PqcErrorKind::InvalidKeyLength,
-    InvalidSecretKeyLength => PqcErrorKind::InvalidSecretKeyLength,
-    InvalidCiphertextLength => PqcErrorKind::InvalidCiphertextLength,
-    InvalidSeedLength => PqcErrorKind::InvalidSeedLength,
-    DecapsulationFailed => PqcErrorKind::DecapsulationFailed,
-    RngFailure => PqcErrorKind::RngFailure,
+    RngFailure => "random number generation failed",
 }

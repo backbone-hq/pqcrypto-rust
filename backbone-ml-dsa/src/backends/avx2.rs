@@ -7,8 +7,8 @@
 //! operates on i64 intermediate values (product of two i32 coefficients).
 //! This backend processes 4 butterfly pairs per AVX2 vector using
 //! `_mm256_mul_epi32` for the widening multiply and decomposes each i64
-//! result into low/high i32 halves for borrow-based reduction (same
-//! technique as the ML-KEM i16 backend, scaled to 32-bit).
+//! result into low/high i32 halves for borrow-based reduction (the same
+//! branchless mask technique as the ML-KEM NTT, scaled to 32-bit).
 
 use safe_arch::*;
 

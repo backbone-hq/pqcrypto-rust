@@ -7,13 +7,14 @@ A KEM built on the hardness of the Module-LWE problem over the ring
 NIST security levels 1, 3, and 5:
 
 | Variant | K | eta1 | eta2 | du | dv | PK bytes | SK bytes | CT bytes |
-|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ML-KEM-512 | 2 | 3 | 2 | 10 | 4 | 800 | 1632 | 768 |
 | ML-KEM-768 | 3 | 2 | 2 | 10 | 4 | 1184 | 2400 | 1088 |
 | ML-KEM-1024 | 4 | 2 | 2 | 11 | 5 | 1568 | 3168 | 1568 |
 
-Includes both the default SHAKE-256-based PRNG path and an
-`#[cfg(feature = "drbg")]` AES-CTR DRBG mode for KAT reproduction.
+## Validation
+
+Tested against NIST ACVP vectors (FIPS 203).
 
 ## Other Implementations
 

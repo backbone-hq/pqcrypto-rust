@@ -14,11 +14,11 @@ use sha3::{
 };
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
-fn g_hash(input: &[u8]) -> [u8; 64] {
+fn g_hash(input: &[u8]) -> SecretArray<u8, 64> {
     let mut hasher = Sha3_512::new();
     Digest::update(&mut hasher, input);
     let result = hasher.finalize();
-    let mut out = [0u8; 64];
+    let mut out = SecretArray::<u8, 64>::new();
     out.copy_from_slice(&result);
     out
 }
@@ -32,27 +32,17 @@ fn h_hash(input: &[u8]) -> [u8; 32] {
     out
 }
 
-fn j_hash(input: &[u8]) -> [u8; 32] {
+fn j_hash(input: &[u8]) -> SecretArray<u8, 32> {
     let mut shake = Shake256::default();
     Update::update(&mut shake, input);
     let mut reader = shake.finalize_xof();
-    let mut out = [0u8; 32];
-    reader.read(&mut out);
-    out
-}
-
-fn kdf(secret: &[u8; 32], ct: &[u8]) -> [u8; 32] {
-    let h_ct = h_hash(ct);
-    let mut shake = Shake256::default();
-    Update::update(&mut shake, secret);
-    Update::update(&mut shake, &h_ct);
-    let mut reader = shake.finalize_xof();
-    let mut out = [0u8; 32];
-    reader.read(&mut out);
+    let mut out = SecretArray::<u8, 32>::new();
+    reader.read(out.as_mut());
     out
 }
 
 #[must_use]
+/** Validate the structural integrity of an encapsulation key (ek). */
 pub(crate) fn check_public_key<const K: usize>(ek: &[u8]) -> bool {
     if ek.len() != K * POLY_BYTES + 32 {
         return false;
@@ -69,7 +59,9 @@ pub(crate) fn check_public_key<const K: usize>(ek: &[u8]) -> bool {
     invalid == 0
 }
 
-fn check_secret_key<const K: usize>(dk: &[u8], pk_size: usize) -> bool {
+#[must_use]
+/** Validate the structural integrity of a decapsulation key (dk) by checking the embedded H(ek). */
+pub(crate) fn check_secret_key<const K: usize>(dk: &[u8], pk_size: usize) -> bool {
     let s_enc_size = K * POLY_BYTES;
     if dk.len() != s_enc_size + pk_size + 64 {
         return false;
@@ -81,24 +73,6 @@ fn check_secret_key<const K: usize>(dk: &[u8], pk_size: usize) -> bool {
     dk_h.ct_eq(&expected_h).unwrap_u8() == 1
 }
 
-/// Expand a 32-byte seed into `d` and `z` via SHAKE-256 and dispatch to
-/// the const-generic `keygen_internal`. Used by the per-variant modules.
-#[must_use]
-pub(crate) fn keygen_from_seed<const K: usize>(
-    seed: &[u8],
-    eta1: usize,
-    eta2: usize,
-) -> (Vec<u8>, Vec<u8>) {
-    let mut shake = Shake256::default();
-    Update::update(&mut shake, seed);
-    let mut reader = shake.finalize_xof();
-    let mut d = SecretArray::<u8, 32>::new();
-    let mut z = SecretArray::<u8, 32>::new();
-    reader.read(&mut *d);
-    reader.read(&mut *z);
-    keygen_internal::<K>(eta1, eta2, &d, &z)
-}
-
 /// ML-KEM.KeyGen_internal (FIPS 203 Section 6.1)
 #[must_use]
 pub(crate) fn keygen_internal<const K: usize>(
@@ -107,10 +81,10 @@ pub(crate) fn keygen_internal<const K: usize>(
     d: &[u8; 32],
     z: &[u8; 32],
 ) -> (Vec<u8>, Vec<u8>) {
-    let mut g_input = [0u8; 33];
+    let mut g_input = SecretArray::<u8, 33>::new();
     g_input[..32].copy_from_slice(d);
     g_input[32] = u8::try_from(K).expect("K fits in u8");
-    let g_out = g_hash(&g_input);
+    let g_out = g_hash(g_input.as_ref());
     let mut rho = [0u8; 32];
     let mut sigma = SecretArray::<u8, 32>::new();
     rho.copy_from_slice(&g_out[..32]);
@@ -201,15 +175,27 @@ pub(crate) fn pke_encrypt<const K: usize>(
 
     let a = sampling::sample_ntt::<K>(&rho_arr);
 
-    let mut y_coeffs = [[0i16; N]; K];
+    let mut y_coeffs = [(); K].map(|_| SecretArray::<i16, N>::new());
     for i in 0..K {
-        y_coeffs[i] = sampling::sample_cbd(r, eta1, u8::try_from(i).expect("i < 256"));
+        y_coeffs[i] = SecretArray::from_array(sampling::sample_cbd(
+            r,
+            eta1,
+            u8::try_from(i).expect("i < 256"),
+        ));
     }
-    let mut e1_coeffs = [[0i16; N]; K];
+    let mut e1_coeffs = [(); K].map(|_| SecretArray::<i16, N>::new());
     for i in 0..K {
-        e1_coeffs[i] = sampling::sample_cbd(r, eta2, u8::try_from(K + i).expect("K+i < 256"));
+        e1_coeffs[i] = SecretArray::from_array(sampling::sample_cbd(
+            r,
+            eta2,
+            u8::try_from(K + i).expect("K+i < 256"),
+        ));
     }
-    let e2_coeffs = sampling::sample_cbd(r, eta2, u8::try_from(2 * K).expect("2*K < 256"));
+    let e2_coeffs = SecretArray::from_array(sampling::sample_cbd(
+        r,
+        eta2,
+        u8::try_from(2 * K).expect("2*K < 256"),
+    ));
 
     let mut y_hat = y_coeffs;
     for i in 0..K {
@@ -242,7 +228,7 @@ pub(crate) fn pke_encrypt<const K: usize>(
 
     let mut v_ntt = [0i16; N];
     for i in 0..K {
-        let mut prod = [0i16; N];
+        let mut prod = SecretArray::<i16, N>::new();
         ntt::poly_basemul(&mut prod, &t_vec.vec[i].coeffs, &y_hat[i]);
         for k in 0..N {
             v_ntt[k] = barrett_reduce({
@@ -284,7 +270,7 @@ pub(crate) fn pke_decrypt<const K: usize>(
     ct: &[u8],
     du: usize,
     dv: usize,
-) -> Result<[u8; 32], Error> {
+) -> Result<SecretArray<u8, 32>, Error> {
     let s_poly_vec = PolyVec::<K>::decode_12(s_enc);
 
     let c1_size = (du * K * N).div_ceil(8);
@@ -310,9 +296,9 @@ pub(crate) fn pke_decrypt<const K: usize>(
         }
         ntt::ntt(&mut u_ntt[i]);
     }
-    let mut w_hat = [0i16; N];
+    let mut w_hat = SecretArray::<i16, N>::new();
     for i in 0..K {
-        let mut prod = [0i16; N];
+        let mut prod = SecretArray::<i16, N>::new();
         ntt::poly_basemul(&mut prod, &s_poly_vec.vec[i].coeffs, &u_ntt[i]);
         for k in 0..N {
             w_hat[k] = barrett_reduce({
@@ -330,7 +316,7 @@ pub(crate) fn pke_decrypt<const K: usize>(
         .expect("rem_euclid(Q) yields u16-safe value");
     }
 
-    let mut msg = [0u8; 32];
+    let mut msg = SecretArray::<u8, 32>::new();
     for i in 0..32 {
         msg[i] = 0;
         for j in 0..8 {
@@ -344,10 +330,20 @@ pub(crate) fn pke_decrypt<const K: usize>(
 }
 
 /// Result of a successful encapsulation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Encapsulation {
     pub shared_secret: [u8; 32],
     pub ciphertext: Vec<u8>,
+}
+
+// Redacting Debug: never print the shared secret.
+impl core::fmt::Debug for Encapsulation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Encapsulation")
+            .field("ciphertext", &self.ciphertext)
+            .field("shared_secret", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// ML-KEM.Encaps_internal (FIPS 203 Section 6.2)
@@ -369,10 +365,9 @@ pub(crate) fn encaps_internal<const K: usize>(
     k_inner.copy_from_slice(&g_out[..32]);
     r.copy_from_slice(&g_out[32..64]);
     let ct = pke_encrypt::<K>(ek, m, &r, eta1, eta2, du, dv)?;
-    let k_out = kdf(&k_inner.into_inner(), &ct);
 
     Ok(Encapsulation {
-        shared_secret: k_out,
+        shared_secret: k_inner.into_inner(), // FIPS 203 Algorithm 14: return K = G(m‖H(ek))[0..32]
         ciphertext: ct,
     })
 }
@@ -401,7 +396,7 @@ pub(crate) fn decaps_internal<const K: usize>(
     let dk_h = &dk[s_enc_size + pk_size..s_enc_size + pk_size + 32];
     let dk_z = &dk[s_enc_size + pk_size + 32..s_enc_size + pk_size + 64];
 
-    let m_prime = SecretArray::from_array(pke_decrypt::<K>(dk_s, ct, du, dv)?);
+    let m_prime = pke_decrypt::<K>(dk_s, ct, du, dv)?;
 
     let mut g_input = SecretArray::<u8, 64>::new();
     g_input[..32].copy_from_slice(&*m_prime);
@@ -420,16 +415,20 @@ pub(crate) fn decaps_internal<const K: usize>(
     rejection_input[32..].copy_from_slice(ct);
     let rejection_key = j_hash(&rejection_input);
 
-    let kdf_k = kdf(&k_prime.into_inner(), ct);
     let mut out = [0u8; 32];
     for i in 0..32 {
-        out[i] = u8::conditional_select(&kdf_k[i], &rejection_key[i], fail);
+        out[i] = u8::conditional_select(&k_prime[i], &rejection_key[i], fail); // FIPS 203 §6.3: valid → K′, invalid → J(z‖c)
     }
     Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     use super::*;
 
     #[test]
@@ -444,13 +443,13 @@ mod tests {
         let r = [0xCDu8; 32];
         let ct = pke_encrypt::<K>(&ek, &msg, &r, 3, 2, 10, 4).expect("pke_encrypt should succeed");
         let dec = pke_decrypt::<K>(s_enc, &ct, 10, 4).expect("pke_decrypt should succeed");
-        assert_eq!(msg, dec, "PKE with msg=0 should recover 0");
+        assert_eq!(msg, *dec, "PKE with msg=0 should recover 0");
 
         let r2 = [0u8; 32];
         let ct2 =
             pke_encrypt::<K>(&ek, &msg, &r2, 3, 2, 10, 4).expect("pke_encrypt should succeed");
         let dec2 = pke_decrypt::<K>(s_enc, &ct2, 10, 4).expect("pke_decrypt should succeed");
-        assert_eq!(msg, dec2, "PKE with msg=0, r=[0;32] should recover 0");
+        assert_eq!(msg, *dec2, "PKE with msg=0, r=[0;32] should recover 0");
 
         for trial in 0..256 {
             let mut test_msg = [0u8; 32];
@@ -462,7 +461,7 @@ mod tests {
                 .expect("pke_encrypt should succeed");
             let dec_t = pke_decrypt::<K>(s_enc, &ct_t, 10, 4).expect("pke_decrypt should succeed");
             assert_eq!(
-                test_msg, dec_t,
+                test_msg, *dec_t,
                 "PKE roundtrip failed at trial {} with r=[{};32]",
                 trial, trial
             );

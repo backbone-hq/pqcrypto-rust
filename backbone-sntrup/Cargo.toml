@@ -1,10 +1,12 @@
 [package]
 name = "backbone-sntrup"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Streamlined NTRU Prime implementation: KEM based on NTRU lattices."
 categories = ["cryptography", "no-std"]
 keywords = ["sntrup", "ntru-prime", "kem", "post-quantum", "lattice-based"]
@@ -14,22 +16,23 @@ exclude = ["tests/"]
 workspace = true
 
 [dependencies]
-backbone-pqcrypto-internals = { version = "0.2.0", path = "../backbone-pqcrypto-internals", default-features = false }
+backbone-pqcrypto-internals = { version = "0.2.1", path = "../backbone-pqcrypto-internals", default-features = false }
+safe_arch = { version = "1", optional = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 subtle = { workspace = true }
 zeroize = { workspace = true }
 getrandom = { workspace = true, default-features = false }
+rand_core = { workspace = true }
 
 [features]
-default = ["std", "zeroize"]
+default = ["std"]
 std = [
   "alloc",
   "sha2/std",
   "sha3/std",
-  "zeroize/alloc",
   "backbone-pqcrypto-internals/std",
   "getrandom/std",
 ]
-alloc = ["zeroize/alloc"]
-zeroize = ["backbone-pqcrypto-internals/zeroize"]
+alloc = []
+simd = ["safe_arch"]

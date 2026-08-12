@@ -32,8 +32,8 @@ impl<T: Zeroize> Drop for SecretVec<T> {
     }
 }
 
-#[allow(missing_docs)]
 impl<T: Zeroize> SecretVec<T> {
+    /// Create a zeroizing vector of `len` default-valued elements.
     #[must_use]
     pub fn new(len: usize) -> Self
     where
@@ -42,11 +42,13 @@ impl<T: Zeroize> SecretVec<T> {
         SecretVec(vec![T::default(); len].into_boxed_slice())
     }
 
+    /// Number of elements.
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Whether the vector is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -62,6 +64,18 @@ impl<T: Zeroize> Deref for SecretVec<T> {
 
 impl<T: Zeroize> DerefMut for SecretVec<T> {
     fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+
+impl<T: Zeroize> AsRef<[T]> for SecretVec<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T: Zeroize> AsMut<[T]> for SecretVec<T> {
+    fn as_mut(&mut self) -> &mut [T] {
         &mut self.0
     }
 }
@@ -97,8 +111,8 @@ impl<T: Zeroize, const N: usize> Drop for SecretArray<T, N> {
     }
 }
 
-#[allow(missing_docs)]
 impl<T: Zeroize + Clone + Default, const N: usize> SecretArray<T, N> {
+    /// Create a zeroizing array of `N` default-valued elements.
     #[must_use]
     pub fn new() -> Self {
         SecretArray(array_from_default::<T, N>())
@@ -199,7 +213,7 @@ impl<T: Zeroize + PartialEq, const N: usize> PartialEq for SecretArray<T, N> {
 
 impl<T: Zeroize + Eq, const N: usize> Eq for SecretArray<T, N> {}
 
-impl<const N: usize> ConstantTimeEq for SecretArray<u8, N> {
+impl<T: Zeroize + ConstantTimeEq, const N: usize> ConstantTimeEq for SecretArray<T, N> {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.0.ct_eq(&other.0)
     }
